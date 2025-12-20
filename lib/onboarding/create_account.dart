@@ -1,0 +1,143 @@
+import 'package:animated_text_kit/animated_text_kit.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+
+class CreateAccount extends StatefulWidget {
+  const CreateAccount({super.key});
+
+  @override
+  State<CreateAccount> createState() => _CreateAccountState();
+}
+
+class _CreateAccountState extends State<CreateAccount> {
+  final GlobalKey _formKey = GlobalKey();
+  final TextEditingController _username = TextEditingController();
+  final TextEditingController _password = TextEditingController();
+  final TextEditingController _email = TextEditingController();
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        FocusScope.of(context).unfocus();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Padding(
+            padding: EdgeInsets.only(left: 20,right: 20),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+
+                children: [
+                  //logo text(chatty)
+                  AnimatedTextKit(
+                      animatedTexts: [
+                        TypewriterAnimatedText(
+                          'Chatty',
+                          textStyle: const TextStyle(
+                            fontSize: 32.0,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          speed: const Duration(milliseconds: 350),
+                        ),
+                      ],
+                   totalRepeatCount: 1,
+                  ),
+                  // Text("Chatty",style: TextStyle(
+                  //     fontWeight: FontWeight.w600,
+                  //     fontSize: 32.sp
+                  // ),),
+                  SizedBox(height: 8.h),
+                  Text(
+                    "Create Your Account",
+                    style: TextStyle(
+                      fontWeight: FontWeight.w400,
+                      fontSize: 16.sp,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                  SizedBox(height: 40.h),
+                  //username
+                  TextFormField(
+                    controller: _username,
+                    decoration: InputDecoration(
+                      hint: Text("Username"),
+                      hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14.sp),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12.r),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12.r),
+                        borderSide: const BorderSide(color: Colors.blue, width: 1.5),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 15.h),
+                  //email
+                  TextFormField(
+                    controller: _email,
+                    decoration: InputDecoration(
+                      hint: Text("Email"),
+                      hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14.sp),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12.r),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12.r),
+                        borderSide: const BorderSide(color: Colors.blue, width: 1.5),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 15.h,),
+                  //password
+                  TextFormField(
+                    controller: _password,
+                    decoration: InputDecoration(
+                      hint: Text("Password"),
+                      hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14.sp),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12.r),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12.r),
+                        borderSide: const BorderSide(color: Colors.blue, width: 1.5),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 15.h,),
+                  //login button
+                  ElevatedButton(onPressed: () {
+
+                  }, style: ElevatedButton.styleFrom(
+                    minimumSize: Size(double.infinity, 50.h),
+                    backgroundColor: const Color(0xFF1A60FF),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12.r),
+                    ),
+                  ),child: Text("Create Account",style: TextStyle(
+                      color: Colors.white
+                  ),)),
+                  SizedBox(height: 15.h,),
+                  //create account
+                  TextButton(onPressed: () {
+                    Navigator.pop(context);
+                  }, child: Text("Already Have an account? Log in",style: TextStyle(
+                      color:const Color(0xFF1A60FF)
+                  ),))
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
