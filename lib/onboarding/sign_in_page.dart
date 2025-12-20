@@ -1,4 +1,5 @@
 import 'package:animated_text_kit/animated_text_kit.dart';
+import 'package:chatty/home/home_page.dart';
 import 'package:chatty/onboarding/create_account.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -94,7 +95,7 @@ class _SignInPageState extends State<SignInPage> {
                   SizedBox(height: 15.h,),
                   //login button
                   ElevatedButton(onPressed: () {
-
+                    Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => HomePage(),));
                   }, style: ElevatedButton.styleFrom(
                     minimumSize: Size(double.infinity, 50.h),
                     backgroundColor: const Color(0xFF1A60FF),
