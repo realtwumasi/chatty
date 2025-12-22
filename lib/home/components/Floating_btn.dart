@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../create_new_group_new_private_message.dart';
+import '../../new_message_page.dart';
 
 class FloatingBtn extends StatefulWidget {
   const FloatingBtn({super.key});
@@ -19,7 +19,7 @@ class _FloatingBtnState extends State<FloatingBtn> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => CreateNewGroupNewPrivateMessage(),
+            builder: (context) => NewMessagePage(),
           ),
         );
     },

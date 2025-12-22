@@ -1,11 +1,9 @@
-
-
 import 'package:chatty/onboarding/splash_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
-void main(){
-  runApp(MyApp());
+void main() {
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -13,27 +11,34 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Initialize ScreenUtil for responsive design based on your design size
     return ScreenUtilInit(
-      designSize: Size(393, 852),
+      designSize: const Size(393, 852),
       minTextAdapt: true,
       splitScreenMode: true,
-      child: MaterialApp(
-        theme: ThemeData(
-          colorScheme: const ColorScheme(
-            brightness: Brightness.light,
-            primary: Colors.white,
-            onPrimary: Colors.blue,
-            secondary: Color(0xFF1A60FF),
-            onSecondary: Colors.white,
-            error: Colors.red,
-            onError: Colors.white,
-            surface: Colors.white,
-            onSurface: Colors.black,
+      builder: (_, child) {
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: 'Chatty',
+          theme: ThemeData(
+            colorScheme: const ColorScheme(
+              brightness: Brightness.light,
+              primary: Colors.white,
+              onPrimary: Color(0xFF1A60FF),
+              secondary: Color(0xFF1A60FF),
+              onSecondary: Colors.white,
+              error: Colors.red,
+              onError: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black,
+            ),
+            useMaterial3: true,
+            // Setting a consistent font family if needed, defaulting to system
+            scaffoldBackgroundColor: Colors.white,
           ),
-          useMaterial3: true,
-        ),
-        home: SplashScreen(),
-      ),
+          home: SplashScreen(),
+        );
+      },
     );
   }
 }
