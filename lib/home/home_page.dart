@@ -5,7 +5,6 @@ import '../new_message_page.dart';
 import 'components/message_tile.dart';
 
 
-// PAGE: Main Home Screen
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -16,9 +15,24 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final MockService _service = MockService();
 
-  // Refresh method to update list when returning from other pages
+  @override
+  void initState() {
+    super.initState();
+    // Listen to changes in the service (e.g., new group created)
+    _service.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    // Clean up listener to prevent memory leaks
+    _service.removeListener(_refresh);
+    super.dispose();
+  }
+
   void _refresh() {
-    setState(() {});
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
@@ -44,20 +58,18 @@ class _HomePageState extends State<HomePage> {
           totalRepeatCount: 1,
         ),
       ),
-      // Floating Action Button to start new chats
       floatingActionButton: FloatingActionButton(
         elevation: 0,
         backgroundColor: const Color(0xFF1A60FF),
         shape: const CircleBorder(),
-        onPressed: () async {
-          // Wait for result to refresh list on return
-          await Navigator.push(
+        onPressed: () {
+          // No longer need to await Navigator because we use a Listener now
+          Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => const NewMessagePage(),
             ),
           );
-          _refresh();
         },
         child: const Icon(Icons.message, color: Colors.white),
       ),
@@ -71,7 +83,10 @@ class _HomePageState extends State<HomePage> {
             final chat = _service.activeChats[index];
             return MessageTile(
               chat: chat,
-              onTap: _refresh, // Callback to refresh home when returning from chat
+              onTap: () {
+                // Optional: force refresh just in case, though listener handles data
+                _refresh();
+              },
             );
           },
         ),

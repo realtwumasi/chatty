@@ -16,7 +16,6 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
   final TextEditingController _groupNameController = TextEditingController();
   final MockService _service = MockService();
 
-  // Track selected users for the group
   final Set<User> _selectedUsers = {};
 
   @override
@@ -35,16 +34,17 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
           style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600, fontSize: 18.sp),
         ),
         actions: [
-          // 'Create' button
           TextButton(
             onPressed: () {
               if (_groupNameController.text.isNotEmpty && _selectedUsers.isNotEmpty) {
-                // Create group via service
+                // 1. Create group via service (This triggers notifyListeners)
                 final chat = _service.createGroup(
                     _groupNameController.text.trim(),
                     _selectedUsers.toList()
                 );
-                // Navigate to the newly created chat
+
+                // 2. Navigate to ChatPage
+                // utilizing pushReplacement so back button goes to Home, not CreateGroupPage
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(builder: (context) => ChatPage(chat: chat)),
@@ -66,12 +66,11 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
       ),
       body: Column(
         children: [
-          // Group Name Input
           Padding(
             padding: EdgeInsets.all(16.w),
             child: TextField(
               controller: _groupNameController,
-              onChanged: (val) => setState(() {}), // Rebuild to enable/disable button
+              onChanged: (val) => setState(() {}),
               decoration: InputDecoration(
                 labelText: "Group Name",
                 prefixIcon: const Icon(Icons.group),
@@ -94,7 +93,6 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
           ),
           SizedBox(height: 10.h),
 
-          // User Selection List
           Expanded(
             child: ListView.builder(
               itemCount: _service.allUsers.length,

@@ -1,14 +1,11 @@
+import 'package:flutter/foundation.dart';
 import '../model/data_models.dart';
 
-
-// A Singleton service to manage app state globally
-// In a real app, you might use Provider, Riverpod, or Bloc.
-class MockService {
+// Service now extends ChangeNotifier for reactive updates
+class MockService extends ChangeNotifier {
   static final MockService _instance = MockService._internal();
   factory MockService() => _instance;
   MockService._internal();
-
-  // --- Mock Data ---
 
   final User currentUser = User(id: 'me', name: 'Me', email: 'me@example.com');
 
@@ -20,33 +17,26 @@ class MockService {
     User(id: '5', name: 'Tom Brown', email: 'tom@example.com'),
   ];
 
-  // Store active chats
   List<Chat> activeChats = [
-    // One pre-filled chat for demonstration
     Chat(
       id: 'c1',
       name: 'John Doe',
       isGroup: false,
-      participants: [], // Populated in init
+      participants: [],
       unreadCount: 2,
       messages: [
-        Message(senderId: '1', text: 'Hey there!', timestamp: DateTime.now().subtract(Duration(minutes: 5)), isMe: false),
-        Message(senderId: 'me', text: 'Hello! How are you?', timestamp: DateTime.now().subtract(Duration(minutes: 4)), isMe: true),
-        Message(senderId: '1', text: 'I am good, just coding.', timestamp: DateTime.now().subtract(Duration(minutes: 1)), isMe: false),
+        Message(senderId: '1', text: 'Hey there!', timestamp: DateTime.now().subtract(const Duration(minutes: 5)), isMe: false),
+        Message(senderId: 'me', text: 'Hello! How are you?', timestamp: DateTime.now().subtract(const Duration(minutes: 4)), isMe: true),
+        Message(senderId: '1', text: 'I am good, just coding.', timestamp: DateTime.now().subtract(const Duration(minutes: 1)), isMe: false),
       ],
     ),
   ];
 
-  // --- Logic Methods ---
-
-  // Get or Create a private chat with a specific user
   Chat getOrCreatePrivateChat(User otherUser) {
-    // Check if chat already exists
     try {
       return activeChats.firstWhere((chat) =>
       !chat.isGroup && chat.name == otherUser.name);
     } catch (e) {
-      // Create new if not found
       final newChat = Chat(
         id: DateTime.now().toIso8601String(),
         name: otherUser.name,
@@ -55,12 +45,12 @@ class MockService {
         messages: [],
         unreadCount: 0,
       );
-      activeChats.insert(0, newChat); // Add to top
+      activeChats.insert(0, newChat);
+      notifyListeners(); // Notify UI to update
       return newChat;
     }
   }
 
-  // Create a new group
   Chat createGroup(String groupName, List<User> members) {
     final newChat = Chat(
       id: DateTime.now().toIso8601String(),
@@ -78,10 +68,10 @@ class MockService {
       unreadCount: 0,
     );
     activeChats.insert(0, newChat);
+    notifyListeners(); // Notify UI to update immediately
     return newChat;
   }
 
-  // Send a message
   void sendMessage(String chatId, String text) {
     final chat = activeChats.firstWhere((c) => c.id == chatId);
     chat.messages.add(
@@ -92,8 +82,10 @@ class MockService {
           isMe: true,
         )
     );
-    // Move chat to top of list
+
+    // Move to top and notify
     activeChats.remove(chat);
     activeChats.insert(0, chat);
+    notifyListeners(); // Notify UI to update
   }
 }
