@@ -1,6 +1,6 @@
 
 
-import 'package:chatty/splash_screen.dart';
+import 'package:chatty/onboarding/splash_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 

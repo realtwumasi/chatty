@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:lottie/lottie.dart';
 
-import 'onboarding/sign_in_page.dart';
+import 'sign_in_page.dart';
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 

@@ -1,4 +1,5 @@
 import 'package:animated_text_kit/animated_text_kit.dart';
+import 'package:chatty/home/components/Floating_btn.dart';
 import 'package:flutter/material.dart';
 
 class HomePage extends StatefulWidget {
@@ -36,11 +37,8 @@ class _HomePageState extends State<HomePage> {
 
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-          onPressed: () {
 
-          },
-      ),
+      floatingActionButton:FloatingBtn(),
     );
   }
 }
