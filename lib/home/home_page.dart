@@ -1,5 +1,6 @@
 import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:chatty/home/components/Floating_btn.dart';
+import 'package:chatty/home/components/message_tile.dart';
 import 'package:flutter/material.dart';
 
 class HomePage extends StatefulWidget {
@@ -32,9 +33,14 @@ class _HomePageState extends State<HomePage> {
         ),
       ),
       endDrawer: Drawer(),
-      body: SingleChildScrollView(
-        child: Column(
-
+      body: Padding(
+        padding: const EdgeInsets.only(left: 15,right: 15, top: 8),
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              MessageTile()
+            ],
+          ),
         ),
       ),
 
