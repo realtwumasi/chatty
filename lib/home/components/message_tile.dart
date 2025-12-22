@@ -1,3 +1,4 @@
+import 'package:chatty/chat_page/chat_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
@@ -13,7 +14,7 @@ class _MessageTileState extends State<MessageTile> {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: () {
-
+        Navigator.push(context, MaterialPageRoute(builder: (context) => ChatPage(),));
       },
       splashColor: Colors.blue.withOpacity(0.2),
       highlightColor: Colors.blue.withOpacity(0.1),
