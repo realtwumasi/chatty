@@ -1,6 +1,8 @@
 import 'package:chatty/onboarding/splash_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'externals/mock_data.dart';
+
 
 void main() {
   runApp(const MyApp());
@@ -11,32 +13,62 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Initialize ScreenUtil for responsive design based on your design size
-    return ScreenUtilInit(
-      designSize: const Size(393, 852),
-      minTextAdapt: true,
-      splitScreenMode: true,
-      builder: (_, child) {
-        return MaterialApp(
-          debugShowCheckedModeBanner: false,
-          title: 'Chatty',
-          theme: ThemeData(
-            colorScheme: const ColorScheme(
-              brightness: Brightness.light,
-              primary: Colors.white,
-              onPrimary: Color(0xFF1A60FF),
-              secondary: Color(0xFF1A60FF),
-              onSecondary: Colors.white,
-              error: Colors.red,
-              onError: Colors.white,
-              surface: Colors.white,
-              onSurface: Colors.black,
-            ),
-            useMaterial3: true,
-            // Setting a consistent font family if needed, defaulting to system
-            scaffoldBackgroundColor: Colors.white,
-          ),
-          home: SplashScreen(),
+    // Listen to MockService for Theme Changes
+    return AnimatedBuilder(
+      animation: MockService(),
+      builder: (context, child) {
+        final isDark = MockService().isDarkMode;
+
+        return ScreenUtilInit(
+          designSize: const Size(393, 852),
+          minTextAdapt: true,
+          splitScreenMode: true,
+          builder: (_, child) {
+            return MaterialApp(
+              debugShowCheckedModeBanner: false,
+              title: 'Chatty',
+              // Dynamic Theme Mode
+              themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
+
+              // Light Theme
+              theme: ThemeData(
+                brightness: Brightness.light,
+                scaffoldBackgroundColor: Colors.white,
+                appBarTheme: const AppBarTheme(
+                  backgroundColor: Colors.white,
+                  iconTheme: IconThemeData(color: Colors.black),
+                ),
+                colorScheme: const ColorScheme.light(
+                  primary: Colors.white,
+                  onPrimary: Color(0xFF1A60FF),
+                  secondary: Color(0xFF1A60FF),
+                  surface: Colors.white,
+                  onSurface: Colors.black,
+                ),
+                useMaterial3: true,
+              ),
+
+              // Dark Theme
+              darkTheme: ThemeData(
+                brightness: Brightness.dark,
+                scaffoldBackgroundColor: const Color(0xFF121212),
+                appBarTheme: const AppBarTheme(
+                  backgroundColor: Color(0xFF121212),
+                  iconTheme: IconThemeData(color: Colors.white),
+                ),
+                colorScheme: const ColorScheme.dark(
+                  primary: Color(0xFF121212),
+                  onPrimary: Colors.white,
+                  secondary: Color(0xFF1A60FF),
+                  surface: Color(0xFF1E1E1E),
+                  onSurface: Colors.white,
+                ),
+                useMaterial3: true,
+              ),
+
+              home: const SplashScreen(),
+            );
+          },
         );
       },
     );

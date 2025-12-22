@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+
 import 'chat_page/chat_page.dart';
 import 'create_group_page.dart';
 import 'externals/mock_data.dart';
 import 'model/data_models.dart';
 
-// PAGE: Select a user or create a group
 class NewMessagePage extends StatefulWidget {
   const NewMessagePage({super.key});
 
@@ -24,7 +24,6 @@ class _NewMessagePageState extends State<NewMessagePage> {
     _filteredUsers = _service.allUsers;
   }
 
-  // Filter users logic
   void _filterUsers(String query) {
     setState(() {
       if (query.isEmpty) {
@@ -41,19 +40,26 @@ class _NewMessagePageState extends State<NewMessagePage> {
 
   @override
   Widget build(BuildContext context) {
+    // Theme Colors
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
+    final textColor = Theme.of(context).colorScheme.onSurface;
+    final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
+    final hintColor = isDark ? Colors.grey[400] : Colors.grey[500];
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: backgroundColor,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: backgroundColor,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.black),
+          icon: Icon(Icons.close, color: textColor),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           "New Message",
           style: TextStyle(
-            color: Colors.black,
+            color: textColor,
             fontWeight: FontWeight.w600,
             fontSize: 18.sp,
           ),
@@ -66,16 +72,17 @@ class _NewMessagePageState extends State<NewMessagePage> {
             padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.grey[100],
+                color: cardColor,
                 borderRadius: BorderRadius.circular(12.r),
               ),
               child: TextField(
                 controller: _searchController,
                 onChanged: _filterUsers,
+                style: TextStyle(color: textColor),
                 decoration: InputDecoration(
                   hintText: "Search users...",
-                  hintStyle: TextStyle(color: Colors.grey[500], fontSize: 14.sp),
-                  prefixIcon: Icon(Icons.search, color: Colors.grey[500], size: 20.sp),
+                  hintStyle: TextStyle(color: hintColor, fontSize: 14.sp),
+                  prefixIcon: Icon(Icons.search, color: hintColor, size: 20.sp),
                   border: InputBorder.none,
                   contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
                 ),
@@ -86,7 +93,6 @@ class _NewMessagePageState extends State<NewMessagePage> {
           // 'Create New Group' Action Tile
           InkWell(
             onTap: () {
-              // Navigate to the new Create Group PAGE (not popup)
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(builder: (context) => const CreateGroupPage()),
@@ -108,14 +114,14 @@ class _NewMessagePageState extends State<NewMessagePage> {
                   SizedBox(width: 12.w),
                   Text(
                     "Create New Group",
-                    style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w600),
+                    style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w600, color: textColor),
                   ),
                 ],
               ),
             ),
           ),
 
-          const Divider(height: 1, thickness: 0.5),
+          Divider(height: 1, thickness: 0.5, color: isDark ? Colors.grey[800] : Colors.grey[300]),
 
           // User List
           Expanded(
@@ -126,7 +132,7 @@ class _NewMessagePageState extends State<NewMessagePage> {
                 return ListTile(
                   contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 4.h),
                   leading: CircleAvatar(
-                    backgroundColor: Colors.grey[300],
+                    backgroundColor: isDark ? Colors.grey[700] : Colors.grey[300],
                     radius: 25.r,
                     child: Text(
                       user.name[0].toUpperCase(),
@@ -138,13 +144,11 @@ class _NewMessagePageState extends State<NewMessagePage> {
                   ),
                   title: Text(
                     user.name,
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16.sp),
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16.sp, color: textColor),
                   ),
-                  subtitle: Text(user.email),
+                  subtitle: Text(user.email, style: TextStyle(color: hintColor)),
                   onTap: () {
-                    // Start logic for private chat
                     final chat = _service.getOrCreatePrivateChat(user);
-                    // Replace this page with the chat page
                     Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(builder: (context) => ChatPage(chat: chat)),

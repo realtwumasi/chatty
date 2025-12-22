@@ -1,9 +1,9 @@
 import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../externals/mock_data.dart';
 import '../new_message_page.dart';
 import 'components/message_tile.dart';
-
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -18,13 +18,11 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    // Listen to changes in the service (e.g., new group created)
     _service.addListener(_refresh);
   }
 
   @override
   void dispose() {
-    // Clean up listener to prevent memory leaks
     _service.removeListener(_refresh);
     super.dispose();
   }
@@ -35,22 +33,114 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  void _handleLogout() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        title: Text("Logout", style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+        content: Text("Are you sure you want to log out?", style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context); // Close dialog
+              Navigator.pop(context); // Close drawer
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Logged out successfully")),
+              );
+            },
+            child: const Text("Logout", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Theme Colors
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
+    final textColor = Theme.of(context).colorScheme.onSurface;
+    final drawerColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: backgroundColor,
+      // Feature: Sidebar / Drawer for User Details & Settings
+      drawer: Drawer(
+        backgroundColor: drawerColor,
+        child: Column(
+          children: [
+            // User Details Header
+            UserAccountsDrawerHeader(
+              decoration: const BoxDecoration(
+                color: Color(0xFF1A60FF),
+              ),
+              currentAccountPicture: CircleAvatar(
+                backgroundColor: Colors.white,
+                child: Text(
+                  _service.currentUser.name[0],
+                  style: TextStyle(
+                    fontSize: 24.sp,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFF1A60FF),
+                  ),
+                ),
+              ),
+              accountName: Text(
+                _service.currentUser.name,
+                style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
+              ),
+              accountEmail: Text(_service.currentUser.email),
+            ),
+
+            // Theme Toggle
+            ListTile(
+              leading: Icon(
+                _service.isDarkMode ? Icons.dark_mode : Icons.light_mode,
+                color: textColor,
+              ),
+              title: Text("Dark Mode", style: TextStyle(color: textColor)),
+              trailing: Switch(
+                value: _service.isDarkMode,
+                activeColor: const Color(0xFF1A60FF),
+                onChanged: (val) {
+                  _service.toggleTheme();
+                },
+              ),
+            ),
+
+            const Spacer(),
+            Divider(color: isDark ? Colors.grey[800] : Colors.grey[300]),
+
+            // Logout
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text("Logout", style: TextStyle(color: Colors.red)),
+              onTap: _handleLogout,
+            ),
+            SizedBox(height: 20.h),
+          ],
+        ),
+      ),
       appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: Colors.white,
+        automaticallyImplyLeading: true,
+        backgroundColor: backgroundColor,
         elevation: 0,
+        iconTheme: IconThemeData(color: textColor),
         title: AnimatedTextKit(
+          key: ValueKey(isDark), // Forces rebuild when theme changes
           animatedTexts: [
             TypewriterAnimatedText(
               'Chatty',
-              textStyle: const TextStyle(
+              textStyle: TextStyle(
                 fontSize: 24.0,
                 fontWeight: FontWeight.bold,
-                color: Colors.black,
+                color: textColor, // Adaptive text color
               ),
               speed: const Duration(milliseconds: 350),
             ),
@@ -63,7 +153,6 @@ class _HomePageState extends State<HomePage> {
         backgroundColor: const Color(0xFF1A60FF),
         shape: const CircleBorder(),
         onPressed: () {
-          // No longer need to await Navigator because we use a Listener now
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -83,10 +172,7 @@ class _HomePageState extends State<HomePage> {
             final chat = _service.activeChats[index];
             return MessageTile(
               chat: chat,
-              onTap: () {
-                // Optional: force refresh just in case, though listener handles data
-                _refresh();
-              },
+              onTap: _refresh,
             );
           },
         ),

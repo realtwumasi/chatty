@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../chat_page/chat_page.dart';
 import '../../model/data_models.dart';
 
+
 // COMPONENT: Display a single chat row in the home list
 class MessageTile extends StatelessWidget {
   final Chat chat;
@@ -16,6 +17,11 @@ class MessageTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Theme Awareness
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = Theme.of(context).colorScheme.onSurface;
+    final secondaryTextColor = isDark ? Colors.grey[400] : Colors.grey[600];
+
     // Get last message for preview
     final String lastMessage = chat.messages.isNotEmpty
         ? chat.messages.last.text
@@ -27,15 +33,13 @@ class MessageTile extends StatelessWidget {
 
     return InkWell(
       onTap: () async {
-        // Navigate to chat page
         await Navigator.push(
           context,
           MaterialPageRoute(builder: (context) => ChatPage(chat: chat)),
         );
-        // Execute callback to refresh home page (update unread count etc)
         onTap();
       },
-      splashColor: Colors.blue.withOpacity(0.1),
+      splashColor: const Color(0xFF1A60FF).withOpacity(0.1),
       borderRadius: BorderRadius.circular(12.r),
       child: Padding(
         padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 8.w),
@@ -43,16 +47,16 @@ class MessageTile extends StatelessWidget {
           children: [
             // Profile Image / Group Icon
             CircleAvatar(
-              backgroundColor: Colors.grey[300],
+              backgroundColor: isDark ? Colors.grey[800] : Colors.grey[300],
               radius: 28.r,
               child: chat.isGroup
-                  ? Icon(Icons.group, color: Colors.grey[700], size: 28.sp)
+                  ? Icon(Icons.group, color: isDark ? Colors.white70 : Colors.grey[700], size: 28.sp)
                   : Text(
                 chat.name.isNotEmpty ? chat.name[0].toUpperCase() : "?",
                 style: TextStyle(
                   fontSize: 22.sp,
                   fontWeight: FontWeight.bold,
-                  color: Colors.grey[700],
+                  color: isDark ? Colors.white70 : Colors.grey[700],
                 ),
               ),
             ),
@@ -72,7 +76,7 @@ class MessageTile extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 16.sp,
                           fontWeight: FontWeight.w600,
-                          color: Colors.black,
+                          color: textColor, // Adaptive Color
                         ),
                       ),
                       Text(
@@ -81,7 +85,7 @@ class MessageTile extends StatelessWidget {
                           fontSize: 12.sp,
                           color: chat.unreadCount > 0
                               ? const Color(0xFF1A60FF)
-                              : Colors.grey[500],
+                              : secondaryTextColor,
                           fontWeight: chat.unreadCount > 0
                               ? FontWeight.bold
                               : FontWeight.normal,
@@ -100,8 +104,8 @@ class MessageTile extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 14.sp,
                             color: chat.unreadCount > 0
-                                ? Colors.black87
-                                : Colors.grey[600],
+                                ? textColor
+                                : secondaryTextColor,
                             fontWeight: chat.unreadCount > 0
                                 ? FontWeight.w500
                                 : FontWeight.normal,
