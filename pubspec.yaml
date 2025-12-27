@@ -38,6 +38,7 @@ dependencies:
   flutter_screenutil: ^5.9.3
   http: ^1.6.0
   animated_text_kit: ^4.3.0
+  shared_preferences: ^2.5.4
 
 dev_dependencies:
   flutter_test:

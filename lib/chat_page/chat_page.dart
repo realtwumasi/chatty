@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import '../externals/mock_data.dart';
 import '../model/data_models.dart';
 import '../model/responsive_helper.dart';
+import '../services/chat_repository.dart'; // Updated
 
 class ChatPage extends StatefulWidget {
   final Chat chat;
@@ -21,30 +21,59 @@ class ChatPage extends StatefulWidget {
 class _ChatPageState extends State<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final MockService _service = MockService();
+  final ChatRepository _repository = ChatRepository();
+
+  // Local reference to track updates
+  late Chat _currentChat;
 
   @override
   void initState() {
     super.initState();
-    widget.chat.unreadCount = 0;
-    _service.addListener(_updateUI);
+    _currentChat = widget.chat;
+    _repository.addListener(_updateUI);
+    // Fetch latest messages from API
+    _repository.fetchMessagesForChat(_currentChat.id, _currentChat.isGroup);
+  }
+
+  @override
+  void didUpdateWidget(ChatPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.chat.id != widget.chat.id) {
+      _currentChat = widget.chat;
+      _repository.fetchMessagesForChat(_currentChat.id, _currentChat.isGroup);
+    }
   }
 
   @override
   void dispose() {
-    _service.removeListener(_updateUI);
+    _repository.removeListener(_updateUI);
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
   void _updateUI() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    // Update local chat object reference from repository to get new messages
+    // We look for a chat with the same ID
+    try {
+      final updatedChat = _repository.chats.firstWhere((c) => c.id == widget.chat.id);
+      setState(() {
+        _currentChat = updatedChat;
+      });
+    } catch (_) {
+      // Chat might not be in the main list yet or list cleared
+    }
   }
 
   void _sendMessage() {
     if (_messageController.text.trim().isNotEmpty) {
-      _service.sendMessage(widget.chat.id, _messageController.text.trim());
+      // Use repository to send. It handles optimistic updates.
+      _repository.sendMessage(
+          _currentChat.id,
+          _messageController.text.trim(),
+          _currentChat.isGroup
+      );
       _messageController.clear();
       _scrollToBottom();
     }
@@ -69,7 +98,6 @@ class _ChatPageState extends State<ChatPage> {
         builder: (context) => Dialog(
           backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          // Fix: Enforce a clean max width for the dialog content on desktop
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 400),
             child: SingleChildScrollView(child: child),
@@ -97,13 +125,13 @@ class _ChatPageState extends State<ChatPage> {
 
   void _showGroupInfo() {
     _showResponsiveModal(
-      child: _GroupInfoContent(chat: widget.chat, service: _service),
+      child: _GroupInfoContent(chat: _currentChat, repository: _repository),
     );
   }
 
   void _showPrivateChatDetails() {
     _showResponsiveModal(
-      child: _PrivateChatInfoContent(chat: widget.chat, service: _service),
+      child: _PrivateChatInfoContent(chat: _currentChat, repository: _repository),
     );
   }
 
@@ -124,7 +152,7 @@ class _ChatPageState extends State<ChatPage> {
             SizedBox(height: 15.h),
             Text("Calling...", style: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 14))),
             SizedBox(height: 5.h),
-            Text(widget.chat.name, style: TextStyle(fontWeight: FontWeight.bold, fontSize: Responsive.fontSize(context, 18), color: Theme.of(context).colorScheme.onSurface)),
+            Text(_currentChat.name, style: TextStyle(fontWeight: FontWeight.bold, fontSize: Responsive.fontSize(context, 18), color: Theme.of(context).colorScheme.onSurface)),
             SizedBox(height: 20.h),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -166,26 +194,26 @@ class _ChatPageState extends State<ChatPage> {
         ),
         title: InkWell(
           onTap: () {
-            widget.chat.isGroup ? _showGroupInfo() : _showPrivateChatDetails();
+            _currentChat.isGroup ? _showGroupInfo() : _showPrivateChatDetails();
           },
           child: Row(
             children: [
               CircleAvatar(
                 backgroundColor: const Color(0xFF1A60FF),
                 radius: Responsive.radius(context, 18),
-                child: widget.chat.isGroup
+                child: _currentChat.isGroup
                     ? Icon(Icons.group, size: Responsive.fontSize(context, 20), color: Colors.white)
-                    : Text(widget.chat.name[0], style: TextStyle(color: Colors.white, fontSize: Responsive.fontSize(context, 18))),
+                    : Text(_currentChat.name.isNotEmpty ? _currentChat.name[0] : '?', style: TextStyle(color: Colors.white, fontSize: Responsive.fontSize(context, 18))),
               ),
               SizedBox(width: 10.w),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    widget.chat.name,
+                    _currentChat.name,
                     style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: Responsive.fontSize(context, 16)),
                   ),
-                  if (widget.chat.isGroup)
+                  if (_currentChat.isGroup)
                     Text(
                       "Tap for info",
                       style: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 12)),
@@ -205,15 +233,13 @@ class _ChatPageState extends State<ChatPage> {
             color: isDark ? const Color(0xFF2C2C2C) : Colors.white,
             onSelected: (value) {
               if (value == 'details') {
-                widget.chat.isGroup ? _showGroupInfo() : _showPrivateChatDetails();
-              } else if (value == 'block') {
-                // handle block
+                _currentChat.isGroup ? _showGroupInfo() : _showPrivateChatDetails();
               }
             },
             itemBuilder: (BuildContext context) {
               return [
                 PopupMenuItem(value: 'details', child: Text('Details', style: TextStyle(color: textColor))),
-                if (!widget.chat.isGroup)
+                if (!_currentChat.isGroup)
                   const PopupMenuItem(value: 'block', child: Text('Block', style: TextStyle(color: Colors.red))),
               ];
             },
@@ -226,9 +252,9 @@ class _ChatPageState extends State<ChatPage> {
             child: ListView.builder(
               controller: _scrollController,
               padding: EdgeInsets.symmetric(horizontal: 15.w, vertical: 10.h),
-              itemCount: widget.chat.messages.length,
+              itemCount: _currentChat.messages.length,
               itemBuilder: (context, index) {
-                final message = widget.chat.messages[index];
+                final message = _currentChat.messages[index];
                 if (message.isSystem) {
                   return Center(
                     child: Container(
@@ -247,7 +273,7 @@ class _ChatPageState extends State<ChatPage> {
             ),
           ),
 
-          // Message Input Area
+          // Message Input
           Container(
             padding: EdgeInsets.symmetric(
                 horizontal: isDesktop ? 20 : 15.w,
@@ -368,20 +394,18 @@ class _ChatPageState extends State<ChatPage> {
   }
 }
 
-// Extracted Content Widgets for cleaner Code and Reusability in Dialog/Sheet
+// Extracted Content Widgets updated with Repository
 class _GroupInfoContent extends StatelessWidget {
   final Chat chat;
-  final MockService service;
-  const _GroupInfoContent({required this.chat, required this.service});
+  final ChatRepository repository;
+  const _GroupInfoContent({required this.chat, required this.repository});
 
   @override
   Widget build(BuildContext context) {
-    // Fix: Explicitly grab colors from Theme because Dialog might not inherit correctly if not careful
     final textColor = Theme.of(context).colorScheme.onSurface;
     final isDesktop = Responsive.isDesktop(context);
 
     return Container(
-      // Fix: Use fixed padding on desktop to avoid "blown up" layout
       padding: EdgeInsets.all(isDesktop ? 24 : 16.w),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -390,41 +414,31 @@ class _GroupInfoContent extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                  "Group Info",
-                  style: TextStyle(fontSize: Responsive.fontSize(context, 18), fontWeight: FontWeight.bold, color: textColor)
-              ),
+              Text("Group Info", style: TextStyle(fontSize: Responsive.fontSize(context, 18), fontWeight: FontWeight.bold, color: textColor)),
               IconButton(onPressed: () => Navigator.pop(context), icon: Icon(Icons.close, color: textColor)),
             ],
           ),
           Divider(color: Colors.grey[300]),
           Text("Members (${chat.participants.length})", style: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 14))),
           SizedBox(height: 10.h),
-          // Fix: Use flexible instead of Expanded if inside a column in a dialog to prevent unbounded height errors
           Flexible(
             child: ListView.builder(
               shrinkWrap: true,
               itemCount: chat.participants.length,
               itemBuilder: (context, index) {
                 final user = chat.participants[index];
-                final isMe = user.id == service.currentUser.id;
+                final isMe = user.id == repository.currentUser.id;
                 return ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: Stack(
                     children: [
-                      CircleAvatar(
-                          radius: Responsive.radius(context, 20),
-                          child: Text(user.name[0])
-                      ),
+                      CircleAvatar(radius: Responsive.radius(context, 20), child: Text(user.name.isNotEmpty ? user.name[0] : '?')),
                       if (user.isOnline)
                         Positioned(right: 0, bottom: 0, child: Container(width: 12, height: 12, decoration: BoxDecoration(color: Colors.green, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)))),
                     ],
                   ),
                   title: Text(user.name + (isMe ? " (You)" : ""), style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16))),
                   subtitle: Text(user.isOnline ? "Online" : "Offline", style: TextStyle(color: user.isOnline ? Colors.green : Colors.grey, fontSize: Responsive.fontSize(context, 12))),
-                  trailing: !isMe ? IconButton(icon: const Icon(Icons.message, color: Color(0xFF1A60FF)), onPressed: () {
-                    Navigator.pop(context);
-                  }) : null,
                 );
               },
             ),
@@ -440,7 +454,7 @@ class _GroupInfoContent extends StatelessWidget {
                   padding: EdgeInsets.symmetric(vertical: isDesktop ? 16 : 12.h)
               ),
               onPressed: () {
-                service.leaveGroup(chat.id);
+                repository.leaveGroup(chat.id);
                 Navigator.pop(context);
               },
               child: const Text("Leave Group"),
@@ -454,20 +468,19 @@ class _GroupInfoContent extends StatelessWidget {
 
 class _PrivateChatInfoContent extends StatelessWidget {
   final Chat chat;
-  final MockService service;
-  const _PrivateChatInfoContent({required this.chat, required this.service});
+  final ChatRepository repository;
+  const _PrivateChatInfoContent({required this.chat, required this.repository});
 
   @override
   Widget build(BuildContext context) {
     final otherUser = chat.participants.firstWhere(
-          (u) => u.id != service.currentUser.id,
+          (u) => u.id != repository.currentUser.id,
       orElse: () => User(id: '?', name: chat.name, email: 'unknown'),
     );
     final textColor = Theme.of(context).colorScheme.onSurface;
     final isDesktop = Responsive.isDesktop(context);
 
     return Container(
-      // Fix: Use fixed logical padding on desktop
       padding: EdgeInsets.all(isDesktop ? 32 : 20.w),
       width: double.infinity,
       child: Column(
@@ -476,7 +489,7 @@ class _PrivateChatInfoContent extends StatelessWidget {
           CircleAvatar(
             radius: isDesktop ? 50 : 40.r,
             backgroundColor: Colors.grey[200],
-            child: Text(otherUser.name[0], style: TextStyle(fontSize: Responsive.fontSize(context, 32), color: Colors.grey[800])),
+            child: Text(otherUser.name.isNotEmpty ? otherUser.name[0] : '?', style: TextStyle(fontSize: Responsive.fontSize(context, 32), color: Colors.grey[800])),
           ),
           SizedBox(height: isDesktop ? 20 : 15.h),
           Text(otherUser.name, style: TextStyle(fontSize: Responsive.fontSize(context, 22), fontWeight: FontWeight.bold, color: textColor)),

@@ -1,9 +1,10 @@
-import 'dart:async';
 import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:lottie/lottie.dart';
+import '../home/home_page.dart';
 import '../model/responsive_helper.dart';
+import '../services/chat_repository.dart';
 import 'sign_in_page.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -14,24 +15,27 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  Timer? timer;
 
   @override
   void initState() {
     super.initState();
-    timer = Timer(const Duration(seconds: 3), () {
-      navigateToSignIn();
-    });
+    _checkAuth();
   }
 
-  @override
-  void dispose() {
-    timer?.cancel();
-    super.dispose();
-  }
+  void _checkAuth() async {
+    // Wait at least 2 seconds for branding
+    await Future.delayed(const Duration(seconds: 2));
 
-  void navigateToSignIn() {
-    if (mounted) {
+    // Check if user is logged in via SharedPrefs
+    final isLoggedIn = await ChatRepository().initialize();
+
+    if (!mounted) return;
+
+    if (isLoggedIn) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const HomePage()),
+      );
+    } else {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const SignInPage()),
       );
@@ -40,11 +44,8 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Theme Awareness
     final textColor = Theme.of(context).colorScheme.onSurface;
     final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
-
-    // Responsive Logic
     final isDesktop = Responsive.isDesktop(context);
     final double lottieSize = isDesktop ? 300.0 : 250.w;
 
@@ -54,19 +55,17 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Optimization: Use SizedBox for explicit dimensions to prevent Web layout shifts
             SizedBox(
               width: lottieSize,
               height: lottieSize,
               child: Lottie.asset(
                 "asset/lotties/Chat Messenger/animations/12345.json",
                 fit: BoxFit.contain,
-                // Optimization: Force high frame rate for smoother web rendering
                 frameRate: FrameRate.max,
                 errorBuilder: (context, error, stackTrace) {
                   return Icon(
-                      Icons.chat_bubble,
-                      size: isDesktop ? 100 : 80.w,
+                      Icons.chat_bubble_rounded,
+                      size: isDesktop ? 120 : 100.w,
                       color: const Color(0xFF1A60FF)
                   );
                 },

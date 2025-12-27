@@ -2,11 +2,12 @@ import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../chat_page/chat_page.dart';
-import '../externals/mock_data.dart';
 import '../model/data_models.dart';
 import '../model/responsive_helper.dart';
 import '../new_message_page.dart';
+import '../services/chat_repository.dart'; // Updated
 import 'components/message_tile.dart';
+import '../onboarding/sign_in_page.dart'; // For logout redirect
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -16,18 +17,20 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final MockService _service = MockService();
+  final ChatRepository _repository = ChatRepository();
   Chat? _selectedChat;
 
   @override
   void initState() {
     super.initState();
-    _service.addListener(_refresh);
+    _repository.addListener(_refresh);
+    // Ensure we have latest data
+    _repository.fetchChats();
   }
 
   @override
   void dispose() {
-    _service.removeListener(_refresh);
+    _repository.removeListener(_refresh);
     super.dispose();
   }
 
@@ -45,11 +48,11 @@ class _HomePageState extends State<HomePage> {
       Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => ChatPage(chat: chat)),
-      ).then((_) => _refresh());
+      ).then((_) => _refresh()); // Refresh on return to update read status/last msg
     }
   }
 
-  void _handleLogout() {
+  void _handleLogout() async {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -59,9 +62,16 @@ class _HomePageState extends State<HomePage> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Logged out successfully")));
+              await _repository.logout();
+              if (mounted) {
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SignInPage()),
+                      (route) => false,
+                );
+              }
             },
             child: const Text("Logout", style: TextStyle(color: Colors.red)),
           ),
@@ -82,7 +92,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // --- MOBILE LAYOUT ---
   Widget _buildMobileLayout() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
@@ -97,7 +106,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // --- DESKTOP LAYOUT ---
   Widget _buildDesktopLayout() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
@@ -108,12 +116,10 @@ class _HomePageState extends State<HomePage> {
       backgroundColor: backgroundColor,
       body: Row(
         children: [
-          // Sidebar width
           SizedBox(
             width: 380,
             child: Column(
               children: [
-                // Desktop Header with "New Chat" button integrated
                 _buildAppBar(textColor, isDark, isDesktop: true),
                 Expanded(child: _buildChatList()),
                 Divider(height: 1, color: borderColor),
@@ -122,7 +128,6 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           VerticalDivider(width: 1, color: borderColor),
-          // Chat Area
           Expanded(
             child: _selectedChat != null
                 ? ChatPage(key: ValueKey(_selectedChat!.id), chat: _selectedChat!, isDesktop: true)
@@ -152,33 +157,26 @@ class _HomePageState extends State<HomePage> {
   Widget _buildCompactUserProfile(bool isDark, Color textColor) {
     return ListTile(
       tileColor: isDark ? Colors.grey[900] : Colors.grey[50],
-      contentPadding: EdgeInsets.symmetric(
-          horizontal: 16.w,
-          vertical: Responsive.isDesktop(context) ? 8 : 4.h
-      ),
+      contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: Responsive.isDesktop(context) ? 8 : 4.h),
       leading: CircleAvatar(
         backgroundColor: const Color(0xFF1A60FF),
         radius: Responsive.radius(context, 20),
         child: Text(
-            _service.currentUser.name[0],
+            _repository.currentUser.name.isNotEmpty ? _repository.currentUser.name[0] : '?',
             style: TextStyle(color: Colors.white, fontSize: Responsive.fontSize(context, 16))
         ),
       ),
       title: Text(
-          _service.currentUser.name,
-          style: TextStyle(
-              color: textColor,
-              fontWeight: FontWeight.bold,
-              fontSize: Responsive.fontSize(context, 14)
-          )
+          _repository.currentUser.name,
+          style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: Responsive.fontSize(context, 14))
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            icon: Icon(_service.isDarkMode ? Icons.dark_mode : Icons.light_mode, color: textColor),
+            icon: Icon(_repository.isDarkMode ? Icons.dark_mode : Icons.light_mode, color: textColor),
             iconSize: Responsive.fontSize(context, 24),
-            onPressed: () => _service.toggleTheme(),
+            onPressed: () => _repository.toggleTheme(),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
           ),
@@ -196,11 +194,14 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildChatList() {
-    if (_service.activeChats.isEmpty) return Center(child: Text("No chats yet", style: TextStyle(color: Colors.grey[400])));
+    if (_repository.chats.isEmpty) {
+      if (_repository.isLoading) return const Center(child: CircularProgressIndicator());
+      return Center(child: Text("No chats yet", style: TextStyle(color: Colors.grey[400])));
+    }
     return ListView.builder(
-      itemCount: _service.activeChats.length,
+      itemCount: _repository.chats.length,
       itemBuilder: (context, index) {
-        final chat = _service.activeChats[index];
+        final chat = _repository.chats[index];
         return MessageTile(
           chat: chat,
           isSelected: _selectedChat?.id == chat.id,
@@ -212,7 +213,7 @@ class _HomePageState extends State<HomePage> {
 
   PreferredSizeWidget _buildAppBar(Color textColor, bool isDark, {required bool isDesktop}) {
     return AppBar(
-      automaticallyImplyLeading: !isDesktop, // Hide hamburger on desktop
+      automaticallyImplyLeading: !isDesktop,
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       elevation: 0,
       scrolledUnderElevation: 0,
@@ -223,11 +224,7 @@ class _HomePageState extends State<HomePage> {
         animatedTexts: [
           TypewriterAnimatedText(
             'Chatty',
-            textStyle: TextStyle(
-                fontSize: Responsive.fontSize(context, 24),
-                fontWeight: FontWeight.bold,
-                color: textColor
-            ),
+            textStyle: TextStyle(fontSize: Responsive.fontSize(context, 24), fontWeight: FontWeight.bold, color: textColor),
             speed: const Duration(milliseconds: 350),
           ),
         ],
@@ -235,14 +232,13 @@ class _HomePageState extends State<HomePage> {
       ),
       actions: [
         if (isDesktop)
-        // Desktop: "New Chat" button in header instead of FAB
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
             child: IconButton(
               onPressed: () {
                 Navigator.push(context, MaterialPageRoute(builder: (context) => const NewMessagePage()));
               },
-              icon: Icon(Icons.add_comment_outlined, color: const Color(0xFF1A60FF), size: 28),
+              icon: const Icon(Icons.add_comment_outlined, color: Color(0xFF1A60FF), size: 28),
               tooltip: "New Chat",
             ),
           )
@@ -272,15 +268,18 @@ class _HomePageState extends State<HomePage> {
             decoration: const BoxDecoration(color: Color(0xFF1A60FF)),
             currentAccountPicture: CircleAvatar(
               backgroundColor: Colors.white,
-              child: Text(_service.currentUser.name[0], style: TextStyle(fontSize: 24.sp, fontWeight: FontWeight.bold, color: const Color(0xFF1A60FF))),
+              child: Text(
+                _repository.currentUser.name.isNotEmpty ? _repository.currentUser.name[0] : '?',
+                style: TextStyle(fontSize: 24.sp, fontWeight: FontWeight.bold, color: const Color(0xFF1A60FF)),
+              ),
             ),
-            accountName: Text(_service.currentUser.name, style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
-            accountEmail: Text(_service.currentUser.email),
+            accountName: Text(_repository.currentUser.name, style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
+            accountEmail: Text(_repository.currentUser.email),
           ),
           ListTile(
-            leading: Icon(_service.isDarkMode ? Icons.dark_mode : Icons.light_mode, color: textColor),
+            leading: Icon(_repository.isDarkMode ? Icons.dark_mode : Icons.light_mode, color: textColor),
             title: Text("Dark Mode", style: TextStyle(color: textColor)),
-            trailing: Switch(value: _service.isDarkMode, activeColor: const Color(0xFF1A60FF), onChanged: (val) => _service.toggleTheme()),
+            trailing: Switch(value: _repository.isDarkMode, activeColor: const Color(0xFF1A60FF), onChanged: (val) => _repository.toggleTheme()),
           ),
           const Spacer(),
           Divider(color: isDark ? Colors.grey[800] : Colors.grey[300]),

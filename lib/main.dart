@@ -1,7 +1,7 @@
-import 'package:chatty/onboarding/splash_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'externals/mock_data.dart';
+import 'onboarding/splash_screen.dart';
+import 'services/chat_repository.dart'; // Updated import
 
 void main() {
   runApp(const MyApp());
@@ -12,15 +12,15 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Listen to MockService for Theme Changes
+    // Now listening to ChatRepository for Theme Changes
     return AnimatedBuilder(
-      animation: MockService(),
+      animation: ChatRepository(),
       builder: (context, child) {
-        final isDark = MockService().isDarkMode;
+        final isDark = ChatRepository().isDarkMode;
 
         return ScreenUtilInit(
           designSize: const Size(393, 852),
-          minTextAdapt: true, // Crucial for desktop scaling
+          minTextAdapt: true,
           splitScreenMode: true,
           builder: (_, child) {
             return MaterialApp(

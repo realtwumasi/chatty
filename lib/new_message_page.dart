@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import '../services/chat_repository.dart';
+import '../models/data_models.dart';
+import '../utils/responsive.dart';
+import 'chat_page.dart';
 import 'chat_page/chat_page.dart';
 import 'create_group_page.dart';
-import 'externals/mock_data.dart';
 import 'model/data_models.dart';
 import 'model/responsive_helper.dart';
 
@@ -15,21 +18,38 @@ class NewMessagePage extends StatefulWidget {
 
 class _NewMessagePageState extends State<NewMessagePage> {
   final TextEditingController _searchController = TextEditingController();
-  final MockService _service = MockService();
+  final ChatRepository _repository = ChatRepository();
   List<User> _filteredUsers = [];
 
   @override
   void initState() {
     super.initState();
-    _filteredUsers = _service.allUsers;
+    if (_repository.allUsers.isEmpty) {
+      _repository.fetchUsers();
+    }
+    _filteredUsers = _repository.allUsers;
+    _repository.addListener(_updateUsers);
+  }
+
+  @override
+  void dispose() {
+    _repository.removeListener(_updateUsers);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _updateUsers() {
+    if (mounted) {
+      _filterUsers(_searchController.text);
+    }
   }
 
   void _filterUsers(String query) {
     setState(() {
       if (query.isEmpty) {
-        _filteredUsers = _service.allUsers;
+        _filteredUsers = _repository.allUsers;
       } else {
-        _filteredUsers = _service.allUsers
+        _filteredUsers = _repository.allUsers
             .where((user) =>
         user.name.toLowerCase().contains(query.toLowerCase()) ||
             user.email.toLowerCase().contains(query.toLowerCase()))
@@ -45,13 +65,14 @@ class _NewMessagePageState extends State<NewMessagePage> {
     final textColor = Theme.of(context).colorScheme.onSurface;
     final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
     final hintColor = isDark ? Colors.grey[400] : Colors.grey[500];
+    final isDesktop = Responsive.isDesktop(context);
 
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
         backgroundColor: backgroundColor,
         elevation: 0,
-        centerTitle: Responsive.isDesktop(context),
+        centerTitle: isDesktop,
         leading: IconButton(
           icon: Icon(Icons.close, color: textColor),
           onPressed: () => Navigator.pop(context),
@@ -65,7 +86,6 @@ class _NewMessagePageState extends State<NewMessagePage> {
           ),
         ),
       ),
-      // Constraint Wrapper prevents 1920px wide search bars
       body: ResponsiveContainer(
         maxWidth: 700,
         child: Column(
@@ -140,7 +160,7 @@ class _NewMessagePageState extends State<NewMessagePage> {
                       backgroundColor: isDark ? Colors.grey[700] : Colors.grey[300],
                       radius: Responsive.radius(context, 25),
                       child: Text(
-                        user.name[0].toUpperCase(),
+                        user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
                         style: TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
@@ -156,12 +176,24 @@ class _NewMessagePageState extends State<NewMessagePage> {
                       ),
                     ),
                     subtitle: Text(user.email, style: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14))),
-                    onTap: () {
-                      final chat = _service.getOrCreatePrivateChat(user);
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(builder: (context) => ChatPage(chat: chat)),
-                      );
+                    onTap: () async {
+                      // 1. Create/Get Chat via API
+                      final chat = await _repository.createPrivateChat(user);
+
+                      if (context.mounted) {
+                        // 2. Logic: Desktop vs Mobile
+                        if (isDesktop) {
+                          // Desktop: Close this modal. The HomePage (Master-Detail) will update
+                          // via the Repository listener, showing the new chat at the top of the list.
+                          Navigator.pop(context);
+                        } else {
+                          // Mobile: Navigate to the full chat screen.
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(builder: (context) => ChatPage(chat: chat)),
+                          );
+                        }
+                      }
                     },
                   );
                 },
