@@ -1,0 +1,10 @@
+{
+  "hosting": {
+    "public": "/home/michael/StudioProjects/chatty/build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
+  }
+}

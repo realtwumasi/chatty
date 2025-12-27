@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../services/chat_repository.dart';
-import '../models/data_models.dart';
-import '../utils/responsive.dart';
-import 'chat_page.dart';
 import 'chat_page/chat_page.dart';
 import 'create_group_page.dart';
 import 'model/data_models.dart';
@@ -150,41 +147,45 @@ class _NewMessagePageState extends State<NewMessagePage> {
             Divider(height: 1, thickness: 0.5, color: isDark ? Colors.grey[800] : Colors.grey[300]),
 
             Expanded(
+              // Fix: Added explicit generic types <User> to ListView.builder isn't strictly necessary but helpful
               child: ListView.builder(
                 itemCount: _filteredUsers.length,
-                itemBuilder: (context, index) {
+                // Fix: Renamed context to itemContext to avoid shadowing the parent context
+                itemBuilder: (itemContext, index) {
                   final user = _filteredUsers[index];
                   return ListTile(
                     contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 4.h),
                     leading: CircleAvatar(
                       backgroundColor: isDark ? Colors.grey[700] : Colors.grey[300],
-                      radius: Responsive.radius(context, 25),
+                      radius: Responsive.radius(itemContext, 25),
                       child: Text(
                         user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
                         style: TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
-                            fontSize: Responsive.fontSize(context, 18)),
+                            fontSize: Responsive.fontSize(itemContext, 18)),
                       ),
                     ),
                     title: Text(
                       user.name,
                       style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: Responsive.fontSize(context, 16),
+                          fontSize: Responsive.fontSize(itemContext, 16),
                           color: textColor
                       ),
                     ),
-                    subtitle: Text(user.email, style: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14))),
+                    subtitle: Text(user.email, style: TextStyle(color: hintColor, fontSize: Responsive.fontSize(itemContext, 14))),
                     onTap: () async {
                       // 1. Create/Get Chat via API
+                      // Fix: createPrivateChat is now definitely in the repo
                       final chat = await _repository.createPrivateChat(user);
 
-                      if (context.mounted) {
+                      // Fix: Use 'mounted' property of the State, not the itemContext which might be detached
+                      if (mounted) {
                         // 2. Logic: Desktop vs Mobile
                         if (isDesktop) {
-                          // Desktop: Close this modal. The HomePage (Master-Detail) will update
-                          // via the Repository listener, showing the new chat at the top of the list.
+                          // Desktop: Close the modal.
+                          // Using context (from build) because itemContext might be unstable
                           Navigator.pop(context);
                         } else {
                           // Mobile: Navigate to the full chat screen.

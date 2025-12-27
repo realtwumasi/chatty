@@ -27,26 +27,41 @@ class ApiService {
   // --- Token Management ---
 
   Future<void> setTokens({required String access, required String refresh}) async {
+    // Always set in memory first
     _accessToken = access;
     _refreshToken = refresh;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyAccess, access);
-    await prefs.setString(_keyRefresh, refresh);
+
+    // Try to persist, but don't crash if plugin fails
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyAccess, access);
+      await prefs.setString(_keyRefresh, refresh);
+    } catch (e) {
+      if (kDebugMode) print("Storage Warning: Could not save tokens: $e");
+    }
   }
 
   Future<bool> loadTokens() async {
-    final prefs = await SharedPreferences.getInstance();
-    _accessToken = prefs.getString(_keyAccess);
-    _refreshToken = prefs.getString(_keyRefresh);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _accessToken = prefs.getString(_keyAccess);
+      _refreshToken = prefs.getString(_keyRefresh);
+    } catch (e) {
+      if (kDebugMode) print("Storage Warning: Could not load tokens: $e");
+    }
     return _accessToken != null;
   }
 
   Future<void> clearTokens() async {
     _accessToken = null;
     _refreshToken = null;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_keyAccess);
-    await prefs.remove(_keyRefresh);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_keyAccess);
+      await prefs.remove(_keyRefresh);
+    } catch (e) {
+      if (kDebugMode) print("Storage Warning: Could not clear tokens: $e");
+    }
   }
 
   // --- HTTP Methods ---
@@ -78,9 +93,6 @@ class ApiService {
   Future<dynamic> _request(Future<http.Response> Function() requestFn) async {
     try {
       final response = await requestFn();
-
-      // Feature Idea: If 401 Unauthorized, try to use _refreshToken to get new access token here
-
       return _processResponse(response);
     } catch (e) {
       if (e is ApiException) rethrow;

@@ -29,48 +29,47 @@ class ChatRepository extends ChangeNotifier {
   static const String _keyUser = 'current_user';
   static const String _keyTheme = 'is_dark_mode';
 
-  // --- Startup / Auto Login ---
+  // --- Startup ---
 
   Future<bool> initialize() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    // 1. Load Theme
-    _isDarkMode = prefs.getBool(_keyTheme) ?? false;
-
-    // 2. Check tokens
-    final hasToken = await _api.loadTokens();
-    if (!hasToken) {
-      notifyListeners();
-      return false; // No token, go to login
-    }
-
-    // 3. Load Cached User (Fast UI)
-    final userJson = prefs.getString(_keyUser);
-    if (userJson != null) {
-      try {
-        _currentUser = User.fromJson(jsonDecode(userJson));
-      } catch (_) {}
-    }
-
-    // 4. Fetch fresh data
     try {
-      await fetchUsers(); // This effectively validates the token
+      final prefs = await SharedPreferences.getInstance();
+      _isDarkMode = prefs.getBool(_keyTheme) ?? false;
+
+      final userJson = prefs.getString(_keyUser);
+      if (userJson != null) {
+        try {
+          _currentUser = User.fromJson(jsonDecode(userJson));
+        } catch (_) {}
+      }
+    } catch (e) {
+      if (kDebugMode) print("Storage Warning: Failed to init storage: $e");
+    }
+
+    final hasToken = await _api.loadTokens();
+
+    // Even if storage fails, we try to fetch if we have an in-memory token (unlikely on restart, but safe)
+    if (!hasToken && _currentUser == null) {
+      notifyListeners();
+      return false;
+    }
+
+    try {
+      await fetchUsers();
       await fetchChats();
       notifyListeners();
-      return true; // Success
+      return true;
     } catch (e) {
-      // If token expired (401), clear and force login
       if (e.toString().contains('401')) {
         await logout();
         return false;
       }
-      // If valid cache but no network, maybe allow entry?
-      // For now, return true if we have a user object
+      // If we have a user object loaded from cache/memory, assume logged in
       return _currentUser != null;
     }
   }
 
-  // --- Auth Actions ---
+  // --- Auth ---
 
   Future<void> login(String username, String password) async {
     _setLoading(true);
@@ -81,10 +80,7 @@ class ChatRepository extends ChangeNotifier {
       });
 
       final tokens = response['tokens'];
-      await _api.setTokens(
-          access: tokens['access'],
-          refresh: tokens['refresh']
-      );
+      await _api.setTokens(access: tokens['access'], refresh: tokens['refresh']);
 
       final userData = response['user'];
       _currentUser = User(
@@ -94,9 +90,11 @@ class ChatRepository extends ChangeNotifier {
         isOnline: true,
       );
 
-      // Persist User
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_keyUser, jsonEncode(_currentUser!.toJson()));
+      // Try saving, ignore failure
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_keyUser, jsonEncode(_currentUser!.toJson()));
+      } catch (_) {}
 
       await fetchUsers();
       await fetchChats();
@@ -113,10 +111,12 @@ class ChatRepository extends ChangeNotifier {
     _currentUser = null;
     _chats = [];
     _allUsers = [];
-
     await _api.clearTokens();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_keyUser);
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_keyUser);
+    } catch (_) {}
 
     notifyListeners();
   }
@@ -141,12 +141,14 @@ class ChatRepository extends ChangeNotifier {
 
   Future<void> toggleTheme() async {
     _isDarkMode = !_isDarkMode;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_keyTheme, _isDarkMode);
     notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyTheme, _isDarkMode);
+    } catch (_) {}
   }
 
-  // --- Data Fetching ---
+  // --- Data ---
 
   Future<void> fetchUsers() async {
     try {
@@ -156,18 +158,13 @@ class ChatRepository extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       if (kDebugMode) print("Fetch users error: $e");
-      // Don't rethrow to avoid crashing UI on minor network blips
     }
   }
 
   Future<void> fetchChats() async {
     try {
-      // 1. Fetch Groups
       final List groupData = await _api.get('/groups/');
-      final groups = groupData.map((e) => Chat.fromGroupJson(e)).toList();
-
-      // Update local state intelligently (merge instead of overwrite if possible)
-      _chats = groups;
+      _chats = groupData.map((e) => Chat.fromGroupJson(e)).toList();
       notifyListeners();
     } catch (e) {
       if (kDebugMode) print("Fetch chats error: $e");
@@ -187,7 +184,6 @@ class ChatRepository extends ChangeNotifier {
       if (chatIndex != -1) {
         final msgs = data.map((e) => Message.fromJson(e, currentUser.id)).toList();
         msgs.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-
         _chats[chatIndex].messages.clear();
         _chats[chatIndex].messages.addAll(msgs);
         notifyListeners();
@@ -198,6 +194,26 @@ class ChatRepository extends ChangeNotifier {
   }
 
   // --- Actions ---
+
+  Future<Chat> createPrivateChat(User otherUser) async {
+    try {
+      return _chats.firstWhere((c) => !c.isGroup && c.participants.any((p) => p.id == otherUser.id));
+    } catch (_) {
+      final newChat = Chat(
+        id: otherUser.id,
+        name: otherUser.name,
+        isGroup: false,
+        messages: [],
+        participants: [currentUser, otherUser],
+      );
+
+      if (!_chats.any((c) => c.id == newChat.id)) {
+        _chats.insert(0, newChat);
+        notifyListeners();
+      }
+      return newChat;
+    }
+  }
 
   Future<void> sendMessage(String targetId, String content, bool isGroup) async {
     final endpoint = '/messages/';
@@ -216,8 +232,6 @@ class ChatRepository extends ChangeNotifier {
       status: MessageStatus.sending,
     );
 
-    // Optimistic Update logic can go here...
-
     try {
       await _api.post(endpoint, body);
       await fetchMessagesForChat(targetId, isGroup);
@@ -230,9 +244,8 @@ class ChatRepository extends ChangeNotifier {
     try {
       final response = await _api.post('/groups/', {
         'name': name,
-        'description': 'Created via Chatty App'
+        'description': 'Created via Chatty'
       });
-
       final newChat = Chat.fromGroupJson(response);
       _chats.insert(0, newChat);
       notifyListeners();
@@ -242,19 +255,15 @@ class ChatRepository extends ChangeNotifier {
     }
   }
 
-  // Bridge for UI
+  void leaveGroup(String chatId) {
+    _chats.removeWhere((c) => c.id == chatId);
+    notifyListeners();
+  }
+
   List<User> get filteredUsers => _allUsers;
 
   void _setLoading(bool val) {
     _isLoading = val;
     notifyListeners();
-  }
-
-  // Legacy mock methods no longer needed but kept empty/compatible if UI calls them directly
-  // In a real refactor, you would remove these from UI calls.
-  void leaveGroup(String chatId) {}
-  Chat getOrCreatePrivateChat(User user) {
-    // Basic mock-like implementation to prevent crash before full API private chat logic
-    return Chat(id: user.id, name: user.name, isGroup: false, messages: [], participants: [currentUser, user]);
   }
 }

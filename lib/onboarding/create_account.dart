@@ -26,6 +26,7 @@ class _CreateAccountState extends State<CreateAccount> {
 
     setState(() => _isLoading = true);
     try {
+      // API requires POST to /users/
       await _repository.register(
           _username.text.trim(),
           _email.text.trim(),
@@ -33,7 +34,7 @@ class _CreateAccountState extends State<CreateAccount> {
       );
 
       if (mounted) {
-        // If register also logs in (as per repo logic), go to Home
+        // Registration successful & Logged in automatically
         Navigator.pushAndRemoveUntil(
             context,
             MaterialPageRoute(builder: (context) => const HomePage()),
@@ -42,8 +43,14 @@ class _CreateAccountState extends State<CreateAccount> {
       }
     } catch (e) {
       if (mounted) {
+        // Clean up error message for user display
+        final msg = e.toString().replaceAll('ApiException:', '').trim();
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Registration Failed: $e"), backgroundColor: Colors.red)
+            SnackBar(
+              content: Text(msg),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+            )
         );
       }
     } finally {
@@ -106,13 +113,30 @@ class _CreateAccountState extends State<CreateAccount> {
                       TextFormField(
                         controller: _username,
                         style: TextStyle(color: textColor),
-                        validator: (val) => val!.isEmpty ? "Required" : null,
+                        autovalidateMode: AutovalidateMode.onUserInteraction,
+                        validator: (val) {
+                          if (val == null || val.isEmpty) return "Required";
+                          // Fix: Strict Regex to match API requirements
+                          final validCharacters = RegExp(r'^[\w.@+-]+$');
+                          if (!validCharacters.hasMatch(val)) {
+                            return "No spaces or special chars allowed";
+                          }
+                          return null;
+                        },
                         decoration: InputDecoration(
                           labelText: "Username",
-                          labelStyle: TextStyle(color: hintColor),
+                          labelStyle: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14)),
                           filled: true,
                           fillColor: inputFillColor,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(Responsive.radius(context, 12)),
+                            borderSide: BorderSide(color: borderColor),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(Responsive.radius(context, 12)),
+                            borderSide: const BorderSide(color: Color(0xFF1A60FF), width: 1.5),
+                          ),
                         ),
                       ),
                       SizedBox(height: isDesktop ? 16 : 16.h),
@@ -123,10 +147,18 @@ class _CreateAccountState extends State<CreateAccount> {
                         validator: (val) => !val!.contains('@') ? "Invalid Email" : null,
                         decoration: InputDecoration(
                           labelText: "Email",
-                          labelStyle: TextStyle(color: hintColor),
+                          labelStyle: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14)),
                           filled: true,
                           fillColor: inputFillColor,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(Responsive.radius(context, 12)),
+                            borderSide: BorderSide(color: borderColor),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(Responsive.radius(context, 12)),
+                            borderSide: const BorderSide(color: Color(0xFF1A60FF), width: 1.5),
+                          ),
                         ),
                       ),
                       SizedBox(height: isDesktop ? 16 : 16.h),
@@ -135,13 +167,21 @@ class _CreateAccountState extends State<CreateAccount> {
                         controller: _password,
                         obscureText: true,
                         style: TextStyle(color: textColor),
-                        validator: (val) => val!.length < 6 ? "Min 6 chars" : null,
+                        validator: (val) => val!.length < 1 ? "Required" : null,
                         decoration: InputDecoration(
                           labelText: "Password",
-                          labelStyle: TextStyle(color: hintColor),
+                          labelStyle: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14)),
                           filled: true,
                           fillColor: inputFillColor,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(Responsive.radius(context, 12)),
+                            borderSide: BorderSide(color: borderColor),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(Responsive.radius(context, 12)),
+                            borderSide: const BorderSide(color: Color(0xFF1A60FF), width: 1.5),
+                          ),
                         ),
                       ),
                       SizedBox(height: isDesktop ? 25 : 25.h),
