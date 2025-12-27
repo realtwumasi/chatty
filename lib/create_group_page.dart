@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'chat_page/chat_page.dart';
 import 'externals/mock_data.dart';
 import 'model/data_models.dart';
+import 'model/responsive_helper.dart';
 
 class CreateGroupPage extends StatefulWidget {
   const CreateGroupPage({super.key});
@@ -22,7 +23,6 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
     final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
     final textColor = Theme.of(context).colorScheme.onSurface;
     final inputFillColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
-    // Fixed: Added ! to ensure these colors are treated as non-nullable Color objects
     final hintColor = isDark ? Colors.grey[400]! : Colors.grey[600]!;
 
     return Scaffold(
@@ -30,13 +30,14 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
       appBar: AppBar(
         backgroundColor: backgroundColor,
         elevation: 0,
+        centerTitle: Responsive.isDesktop(context),
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: textColor),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           "New Group",
-          style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: 18.sp),
+          style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: Responsive.fontSize(context, 18)),
         ),
         actions: [
           TextButton(
@@ -59,76 +60,80 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                     ? const Color(0xFF1A60FF)
                     : Colors.grey,
                 fontWeight: FontWeight.bold,
-                fontSize: 16.sp,
+                fontSize: Responsive.fontSize(context, 16),
               ),
             ),
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Group Name Input
-          Padding(
-            padding: EdgeInsets.all(16.w),
-            child: TextField(
-              controller: _groupNameController,
-              onChanged: (val) => setState(() {}),
-              style: TextStyle(color: textColor),
-              decoration: InputDecoration(
-                labelText: "Group Name",
-                labelStyle: TextStyle(color: hintColor),
-                prefixIcon: Icon(Icons.group, color: hintColor),
-                filled: true,
-                fillColor: inputFillColor,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12.r),
-                  borderSide: BorderSide.none,
+      // Center content on large screens
+      body: ResponsiveContainer(
+        maxWidth: 700,
+        child: Column(
+          children: [
+            Padding(
+              padding: EdgeInsets.all(16.w),
+              child: TextField(
+                controller: _groupNameController,
+                onChanged: (val) => setState(() {}),
+                style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16)),
+                decoration: InputDecoration(
+                  labelText: "Group Name",
+                  labelStyle: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14)),
+                  prefixIcon: Icon(Icons.group, color: hintColor, size: Responsive.fontSize(context, 20)),
+                  filled: true,
+                  fillColor: inputFillColor,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
               ),
             ),
-          ),
 
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16.w),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text("Select Members", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.sp, color: hintColor)),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.w),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text("Select Members", style: TextStyle(fontWeight: FontWeight.bold, fontSize: Responsive.fontSize(context, 14), color: hintColor)),
+              ),
             ),
-          ),
-          SizedBox(height: 10.h),
+            SizedBox(height: 10.h),
 
-          Expanded(
-            child: ListView.builder(
-              itemCount: _service.allUsers.length,
-              itemBuilder: (context, index) {
-                final user = _service.allUsers[index];
-                final isSelected = _selectedUsers.contains(user);
+            Expanded(
+              child: ListView.builder(
+                itemCount: _service.allUsers.length,
+                itemBuilder: (context, index) {
+                  final user = _service.allUsers[index];
+                  final isSelected = _selectedUsers.contains(user);
 
-                return CheckboxListTile(
-                  value: isSelected,
-                  activeColor: const Color(0xFF1A60FF),
-                  checkColor: Colors.white,
-                  side: BorderSide(color: hintColor),
-                  secondary: CircleAvatar(
-                    backgroundColor: isDark ? Colors.grey[700] : Colors.grey[300],
-                    child: Text(user.name[0], style: const TextStyle(color: Colors.white)),
-                  ),
-                  title: Text(user.name, style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.w500, color: textColor)),
-                  subtitle: Text(user.email, style: TextStyle(color: hintColor)),
-                  onChanged: (bool? selected) {
-                    setState(() {
-                      if (selected == true) {
-                        _selectedUsers.add(user);
-                      } else {
-                        _selectedUsers.remove(user);
-                      }
-                    });
-                  },
-                );
-              },
+                  return CheckboxListTile(
+                    value: isSelected,
+                    activeColor: const Color(0xFF1A60FF),
+                    checkColor: Colors.white,
+                    side: BorderSide(color: hintColor),
+                    secondary: CircleAvatar(
+                      backgroundColor: isDark ? Colors.grey[700] : Colors.grey[300],
+                      radius: Responsive.radius(context, 20),
+                      child: Text(user.name[0], style: TextStyle(color: Colors.white, fontSize: Responsive.fontSize(context, 16))),
+                    ),
+                    title: Text(user.name, style: TextStyle(fontSize: Responsive.fontSize(context, 16), fontWeight: FontWeight.w500, color: textColor)),
+                    subtitle: Text(user.email, style: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14))),
+                    onChanged: (bool? selected) {
+                      setState(() {
+                        if (selected == true) {
+                          _selectedUsers.add(user);
+                        } else {
+                          _selectedUsers.remove(user);
+                        }
+                      });
+                    },
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

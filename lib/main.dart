@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'externals/mock_data.dart';
 
-
 void main() {
   runApp(const MyApp());
 }
@@ -21,16 +20,14 @@ class MyApp extends StatelessWidget {
 
         return ScreenUtilInit(
           designSize: const Size(393, 852),
-          minTextAdapt: true,
+          minTextAdapt: true, // Crucial for desktop scaling
           splitScreenMode: true,
           builder: (_, child) {
             return MaterialApp(
               debugShowCheckedModeBanner: false,
               title: 'Chatty',
-              // Dynamic Theme Mode
               themeMode: isDark ? ThemeMode.dark : ThemeMode.light,
 
-              // Light Theme
               theme: ThemeData(
                 brightness: Brightness.light,
                 scaffoldBackgroundColor: Colors.white,
@@ -48,7 +45,6 @@ class MyApp extends StatelessWidget {
                 useMaterial3: true,
               ),
 
-              // Dark Theme
               darkTheme: ThemeData(
                 brightness: Brightness.dark,
                 scaffoldBackgroundColor: const Color(0xFF121212),
