@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -69,13 +71,13 @@ class ApiService {
   Future<dynamic> get(String endpoint, {Map<String, String>? params}) async {
     if (_accessToken == null) await loadTokens();
     final uri = Uri.parse('$baseUrl$endpoint').replace(queryParameters: params);
-    return _request(() => http.get(uri, headers: _headers));
+    return _requestWithRetry(() => http.get(uri, headers: _headers));
   }
 
   Future<dynamic> post(String endpoint, Map<String, dynamic> body) async {
     if (_accessToken == null) await loadTokens();
     final uri = Uri.parse('$baseUrl$endpoint');
-    return _request(() => http.post(uri, headers: _headers, body: jsonEncode(body)));
+    return _requestWithRetry(() => http.post(uri, headers: _headers, body: jsonEncode(body)));
   }
 
   Map<String, String> get _headers {
@@ -90,13 +92,34 @@ class ApiService {
     return headers;
   }
 
-  Future<dynamic> _request(Future<http.Response> Function() requestFn) async {
-    try {
-      final response = await requestFn();
-      return _processResponse(response);
-    } catch (e) {
-      if (e is ApiException) rethrow;
-      throw ApiException("Network error: $e");
+  /// Reliability Feature: Automatic Retry Mechanism
+  /// Retries the request up to [maxRetries] times if a network error occurs.
+  Future<dynamic> _requestWithRetry(Future<http.Response> Function() requestFn, {int maxRetries = 3}) async {
+    int attempts = 0;
+    while (attempts < maxRetries) {
+      try {
+        final response = await requestFn();
+        return _processResponse(response);
+      } catch (e) {
+        attempts++;
+        // If it's a known API exception (like 400 Bad Request), don't retry, throw immediately
+        if (e is ApiException && (e.statusCode != null && e.statusCode! < 500)) {
+          rethrow;
+        }
+
+        // Only retry on Network errors (SocketException) or Server errors (500+)
+        final isNetworkError = e is SocketException || e is TimeoutException;
+        final isServerError = e is ApiException && (e.statusCode == null || e.statusCode! >= 500);
+
+        if (attempts >= maxRetries || (!isNetworkError && !isServerError)) {
+          if (e is ApiException) rethrow;
+          throw ApiException("Network error after $attempts attempts: ${e.toString()}");
+        }
+
+        // Exponential backoff: 1s, 2s, 4s
+        if (kDebugMode) print("Request failed, retrying ($attempts/$maxRetries)...");
+        await Future.delayed(Duration(seconds: (1 << (attempts - 1))));
+      }
     }
   }
 

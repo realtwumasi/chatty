@@ -185,7 +185,7 @@ class ChatRepository {
 
   Future<void> fetchMessagesForChat(String chatId, bool isGroup) async {
     try {
-      // 1. Fetch group members if it's a group
+      // 1. Fetch group members if it's a group (Detects Joins/Leaves)
       if (isGroup) {
         fetchGroupMembers(chatId).catchError((e){});
       }
@@ -213,7 +213,28 @@ class ChatRepository {
         final newMsgs = data.map((e) => Message.fromJson(e, currentUser.id)).toList();
         newMsgs.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
-        // Create a copy of the chat to trigger immutability update if needed
+        // Preserve temporary/failed messages that haven't been synced yet
+        final currentMessages = chats[chatIndex].messages;
+        final unsyncedMessages = currentMessages.where((m) =>
+        m.status == MessageStatus.sending || m.status == MessageStatus.failed
+        ).toList();
+
+        final finalMessages = [...newMsgs];
+        for (var m in unsyncedMessages) {
+          if (!finalMessages.any((fm) => fm.text == m.text && fm.timestamp.difference(m.timestamp).inSeconds.abs() < 2)) {
+            finalMessages.add(m);
+          }
+        }
+
+        // Ensure system messages are preserved if generated locally
+        final systemMessages = currentMessages.where((m) => m.isSystem).toList();
+        for (var sysMsg in systemMessages) {
+          if (!finalMessages.any((m) => m.id == sysMsg.id)) {
+            finalMessages.add(sysMsg);
+          }
+        }
+        finalMessages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
         final updatedChat = Chat(
           id: chats[chatIndex].id,
           name: chats[chatIndex].name,
@@ -221,10 +242,9 @@ class ChatRepository {
           participants: chats[chatIndex].participants,
           unreadCount: chats[chatIndex].unreadCount,
           eventLog: chats[chatIndex].eventLog,
-          messages: newMsgs,
+          messages: finalMessages,
         );
 
-        // Update list immutably
         final newChatList = List<Chat>.from(chats);
         newChatList[chatIndex] = updatedChat;
         _ref.read(chatListProvider.notifier).state = newChatList;
@@ -246,11 +266,11 @@ class ChatRepository {
       if (chatIndex != -1) {
         final currentChat = chats[chatIndex];
 
-        // --- System Message Logic (Joins/Leaves) ---
         final oldMemberIds = currentChat.participants.map((u) => u.id).toSet();
         final newMemberIds = newMembers.map((u) => u.id).toSet();
         final List<Message> newSystemMessages = [];
 
+        // Only generate system messages if we already had members (prevent spam on initial load)
         if (oldMemberIds.isNotEmpty) {
           for (var user in newMembers) {
             if (!oldMemberIds.contains(user.id)) {
@@ -264,22 +284,24 @@ class ChatRepository {
           }
         }
 
-        // --- Update State ---
-        final updatedMessages = List<Message>.from(currentChat.messages)..addAll(newSystemMessages);
+        // Only update if there are changes to avoid unnecessary rebuilds
+        if (oldMemberIds.length != newMemberIds.length || newSystemMessages.isNotEmpty) {
+          final updatedMessages = List<Message>.from(currentChat.messages)..addAll(newSystemMessages);
 
-        final updatedChat = Chat(
-          id: currentChat.id,
-          name: currentChat.name,
-          isGroup: currentChat.isGroup,
-          messages: updatedMessages,
-          participants: newMembers,
-          unreadCount: currentChat.unreadCount,
-          eventLog: currentChat.eventLog,
-        );
+          final updatedChat = Chat(
+            id: currentChat.id,
+            name: currentChat.name,
+            isGroup: currentChat.isGroup,
+            messages: updatedMessages,
+            participants: newMembers,
+            unreadCount: currentChat.unreadCount,
+            eventLog: currentChat.eventLog,
+          );
 
-        final newChatList = List<Chat>.from(chats);
-        newChatList[chatIndex] = updatedChat;
-        _ref.read(chatListProvider.notifier).state = newChatList;
+          final newChatList = List<Chat>.from(chats);
+          newChatList[chatIndex] = updatedChat;
+          _ref.read(chatListProvider.notifier).state = newChatList;
+        }
       }
     } catch (e) {
       if (kDebugMode) print("Fetch group members error: $e");
@@ -317,10 +339,34 @@ class ChatRepository {
         participants: [currentUser, otherUser],
       );
 
-      // Add to state
       _ref.read(chatListProvider.notifier).state = [newChat, ...chats];
       return newChat;
     }
+  }
+
+  Future<void> resendMessage(String chatId, Message message, bool isGroup) async {
+    // Remove the failed message first to avoid duplicates when we re-add it as sending
+    final chats = _ref.read(chatListProvider);
+    final chatIndex = chats.indexWhere((c) => isGroup ? c.id == chatId : c.participants.any((p) => p.id == chatId));
+
+    if (chatIndex != -1) {
+      final updatedMsgs = chats[chatIndex].messages.where((m) => m.id != message.id).toList();
+      final updatedChat = Chat(
+        id: chats[chatIndex].id,
+        name: chats[chatIndex].name,
+        isGroup: chats[chatIndex].isGroup,
+        participants: chats[chatIndex].participants,
+        messages: updatedMsgs,
+        unreadCount: chats[chatIndex].unreadCount,
+        eventLog: chats[chatIndex].eventLog,
+      );
+      final newChatList = List<Chat>.from(chats);
+      newChatList[chatIndex] = updatedChat;
+      _ref.read(chatListProvider.notifier).state = newChatList;
+    }
+
+    // Call send message with original content
+    await sendMessage(chatId, message.text, isGroup);
   }
 
   Future<void> sendMessage(String targetId, String content, bool isGroup) async {
@@ -370,7 +416,27 @@ class ChatRepository {
       await _api.post(endpoint, body);
       await fetchMessagesForChat(targetId, isGroup);
     } catch (e) {
-      // Handle error state here if needed
+      // Mark as failed in state
+      if (chatIndex != -1) {
+        final currentChats = _ref.read(chatListProvider); // Read fresh state
+        final msgs = List<Message>.from(currentChats[chatIndex].messages);
+        if (msgs.isNotEmpty && msgs.last.status == MessageStatus.sending) {
+          msgs.last.status = MessageStatus.failed;
+
+          final failedChat = Chat(
+            id: currentChats[chatIndex].id,
+            name: currentChats[chatIndex].name,
+            isGroup: currentChats[chatIndex].isGroup,
+            participants: currentChats[chatIndex].participants,
+            messages: msgs,
+            unreadCount: currentChats[chatIndex].unreadCount,
+            eventLog: currentChats[chatIndex].eventLog,
+          );
+          final newChatList = List<Chat>.from(currentChats);
+          newChatList[chatIndex] = failedChat;
+          _ref.read(chatListProvider.notifier).state = newChatList;
+        }
+      }
       rethrow;
     }
   }

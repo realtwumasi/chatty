@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,19 +24,27 @@ class ChatPage extends ConsumerStatefulWidget {
 class _ChatPageState extends ConsumerState<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-
-  // Use this to ensure we track the right chat across rebuilds
   late String _chatId;
+  Timer? _pollingTimer;
 
   @override
   void initState() {
     super.initState();
     _chatId = widget.chat.id;
 
-    // Fetch latest messages
-    ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, widget.chat.isGroup);
+    // Initial fetch
+    _refreshMessages();
+
+    // Polling for real-time updates (Requirement 2 & 5)
+    _pollingTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      _refreshMessages();
+    });
 
     SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
+  }
+
+  void _refreshMessages() {
+    ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, widget.chat.isGroup);
   }
 
   @override
@@ -43,13 +52,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.chat.id != widget.chat.id) {
       _chatId = widget.chat.id;
-      ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, widget.chat.isGroup);
+      _refreshMessages();
       _messageController.clear();
     }
   }
 
   @override
   void dispose() {
+    _pollingTimer?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -130,8 +140,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   void _handleCall(Chat currentChat) {
-    // ... Call dialog code (omitted for brevity, same as before) ...
-    // Reusing the same UI logic as before but passing currentChat
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -149,7 +157,19 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             Text("Calling...", style: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 14))),
             SizedBox(height: 5.h),
             Text(currentChat.name, style: TextStyle(fontWeight: FontWeight.bold, fontSize: Responsive.fontSize(context, 18), color: Theme.of(context).colorScheme.onSurface)),
-            // ...
+            SizedBox(height: 20.h),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                FloatingActionButton(
+                  backgroundColor: Colors.red,
+                  elevation: 0,
+                  mini: true,
+                  onPressed: () => Navigator.pop(context),
+                  child: const Icon(Icons.call_end, color: Colors.white),
+                ),
+              ],
+            )
           ],
         ),
       ),
@@ -162,13 +182,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
     final textColor = Theme.of(context).colorScheme.onSurface;
     final inputColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
-    final bool isDesktop = Responsive.isDesktop(context);
+    final isDesktop = Responsive.isDesktop(context);
 
     // Watch the specific chat from the list to get real-time updates
     final chatList = ref.watch(chatListProvider);
     final currentChat = chatList.firstWhere(
             (c) => c.id == _chatId,
-        orElse: () => widget.chat // Fallback if not found (e.g. initial load)
+        orElse: () => widget.chat
     );
 
     return Scaffold(
@@ -260,7 +280,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     ),
                   );
                 }
-                return _buildMessageBubble(message, isDark);
+                return _buildMessageBubble(message, isDark, context, ref);
               },
             ),
           ),
@@ -325,8 +345,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     );
   }
 
-  Widget _buildMessageBubble(Message message, bool isDark) {
-    // ... same as before ...
+  Widget _buildMessageBubble(Message message, bool isDark, BuildContext context, WidgetRef ref) {
     return Align(
       alignment: message.isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Column(
@@ -341,7 +360,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             ),
             decoration: BoxDecoration(
               color: message.isMe
-                  ? const Color(0xFF1A60FF)
+                  ? (message.status == MessageStatus.failed ? Colors.red.withOpacity(0.8) : const Color(0xFF1A60FF))
                   : (isDark ? const Color(0xFF2C2C2C) : Colors.grey[200]),
               borderRadius: BorderRadius.only(
                 topLeft: Radius.circular(16.r),
@@ -361,7 +380,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                           style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 12.sp,
-                              color: Colors.orange // Or a deterministic color based on name
+                              color: Colors.orange
                           )
                       ),
                     ),
@@ -387,13 +406,26 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               ),
               if (message.isMe) ...[
                 SizedBox(width: 4.w),
-                Icon(
-                  message.status == MessageStatus.failed ? Icons.error_outline :
-                  message.status == MessageStatus.sending ? Icons.access_time :
-                  message.status == MessageStatus.delivered ? Icons.done_all : Icons.done,
-                  size: Responsive.fontSize(context, 12),
-                  color: message.status == MessageStatus.failed ? Colors.red : Colors.grey[500],
-                ),
+                if (message.status == MessageStatus.failed)
+                  GestureDetector(
+                    onTap: () {
+                      ref.read(chatRepositoryProvider).resendMessage(_chatId, message, widget.chat.isGroup);
+                    },
+                    child: Row(
+                      children: [
+                        Icon(Icons.refresh, size: Responsive.fontSize(context, 12), color: Colors.red),
+                        SizedBox(width: 2.w),
+                        Text("Retry", style: TextStyle(color: Colors.red, fontSize: Responsive.fontSize(context, 10), fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  )
+                else
+                  Icon(
+                    message.status == MessageStatus.sending ? Icons.access_time :
+                    message.status == MessageStatus.delivered ? Icons.done_all : Icons.done,
+                    size: Responsive.fontSize(context, 12),
+                    color: Colors.grey[500],
+                  ),
               ]
             ],
           ),
@@ -448,7 +480,7 @@ class _GroupInfoContent extends ConsumerWidget {
                     ],
                   ),
                   title: Text(user.name + (isMe ? " (You)" : ""), style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16))),
-                  // Added feature: Direct Message from group list
+                  // Requirement 3: Direct Private Message from Group
                   trailing: !isMe ? IconButton(
                     icon: const Icon(Icons.message, color: Color(0xFF1A60FF)),
                     onPressed: () async {
@@ -507,7 +539,6 @@ class _PrivateChatInfoContent extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ... User avatar and info (same as before) ...
           CircleAvatar(
             radius: isDesktop ? 50 : 40.r,
             backgroundColor: Colors.grey[200],
@@ -516,7 +547,22 @@ class _PrivateChatInfoContent extends ConsumerWidget {
           SizedBox(height: isDesktop ? 20 : 15.h),
           Text(otherUser.name, style: TextStyle(fontSize: Responsive.fontSize(context, 22), fontWeight: FontWeight.bold, color: textColor)),
           Text(otherUser.email, style: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 14))),
-          // ... Block button ...
+          SizedBox(height: 5.h),
+          Text(otherUser.isOnline ? "• Online" : "• Offline",
+              style: TextStyle(color: otherUser.isOnline ? Colors.green : Colors.grey, fontWeight: FontWeight.w500)),
+          SizedBox(height: isDesktop ? 40 : 30.h),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Container(
+              padding: EdgeInsets.all(8.w),
+              decoration: BoxDecoration(color: Colors.red[50], borderRadius: BorderRadius.circular(8.r)),
+              child: const Icon(Icons.block, color: Colors.red),
+            ),
+            title: const Text("Block User", style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+            onTap: () {
+              Navigator.pop(context);
+            },
+          ),
         ],
       ),
     );
