@@ -14,7 +14,6 @@ class ChatRepository extends ChangeNotifier {
   User? _currentUser;
   User get currentUser => _currentUser ?? User(id: '', name: 'Guest', email: '');
 
-  // Optimization: Use separate map for quick lookup
   List<Chat> _chats = [];
   List<Chat> get chats => _chats;
 
@@ -88,7 +87,7 @@ class ChatRepository extends ChangeNotifier {
       _currentUser = User(
         id: userData['id']?.toString() ?? '',
         email: userData['email'] ?? '',
-        name: username,
+        name: userData['username'] ?? username, // API uses username
         isOnline: true,
       );
 
@@ -152,12 +151,20 @@ class ChatRepository extends ChangeNotifier {
 
   Future<void> fetchUsers() async {
     try {
-      final List data = await _api.get('/users/');
+      // API returns PaginatedUserList: { count, next, previous, results: [] }
+      final response = await _api.get('/users/');
+
+      final List data = (response is Map && response.containsKey('results'))
+          ? response['results']
+          : [];
+
       final newUsers = data.map((e) => User.fromJson(e)).toList();
-      newUsers.removeWhere((u) => u.id == currentUser.id);
+
+      if (_currentUser != null) {
+        newUsers.removeWhere((u) => u.id == _currentUser!.id);
+      }
 
       _allUsers = newUsers;
-      // Optimization: Only notify if absolutely necessary, but users list changes rarely
       notifyListeners();
     } catch (e) {
       if (kDebugMode) print("Fetch users error: $e");
@@ -166,7 +173,13 @@ class ChatRepository extends ChangeNotifier {
 
   Future<void> fetchChats() async {
     try {
-      final List groupData = await _api.get('/groups/');
+      // API returns PaginatedGroupList
+      final response = await _api.get('/groups/');
+
+      final List groupData = (response is Map && response.containsKey('results'))
+          ? response['results']
+          : [];
+
       _chats = groupData.map((e) => Chat.fromGroupJson(e)).toList();
       notifyListeners();
     } catch (e) {
@@ -176,20 +189,33 @@ class ChatRepository extends ChangeNotifier {
 
   Future<void> fetchMessagesForChat(String chatId, bool isGroup) async {
     try {
+      // API Parameters from YAML
       final Map<String, String> params = isGroup
           ? {'group': chatId, 'message_type': 'group'}
           : {'recipient': chatId, 'message_type': 'private'};
 
-      final List data = await _api.get('/messages/', params: params);
+      // API returns PaginatedMessageList
+      final response = await _api.get('/messages/', params: params);
 
-      final chatIndex = _chats.indexWhere((c) => isGroup ? c.id == chatId : c.participants.any((p) => p.id == chatId));
+      final List data = (response is Map && response.containsKey('results'))
+          ? response['results']
+          : [];
+
+      // Find the chat in local state to update
+      final chatIndex = _chats.indexWhere((c) => isGroup
+          ? c.id == chatId
+          : c.participants.any((p) => p.id == chatId && p.id != currentUser.id));
 
       if (chatIndex != -1) {
         final newMsgs = data.map((e) => Message.fromJson(e, currentUser.id)).toList();
+
+        // Sort by timestamp (oldest first for ListView)
         newMsgs.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
-        // Optimization: Check if messages actually changed before notifying
+        // Optimization: Check if messages actually changed before notifying to reduce rebuilds
         final currentMsgs = _chats[chatIndex].messages;
+
+        // Simple length check or last ID check for optimization
         if (currentMsgs.length != newMsgs.length ||
             (newMsgs.isNotEmpty && currentMsgs.isNotEmpty && newMsgs.last.id != currentMsgs.last.id)) {
 
@@ -207,8 +233,12 @@ class ChatRepository extends ChangeNotifier {
 
   Future<Chat> createPrivateChat(User otherUser) async {
     try {
+      // Check if we already have a chat with this user
       return _chats.firstWhere((c) => !c.isGroup && c.participants.any((p) => p.id == otherUser.id));
     } catch (_) {
+      // If not, create a temporary local chat object
+      // Note: The API doesn't have an explicit "create private chat" endpoint.
+      // Messages create the thread implicitly.
       final newChat = Chat(
         id: otherUser.id,
         name: otherUser.name,
@@ -217,6 +247,7 @@ class ChatRepository extends ChangeNotifier {
         participants: [currentUser, otherUser],
       );
 
+      // Add to local list immediately for UI responsiveness
       if (!_chats.any((c) => c.id == newChat.id)) {
         _chats.insert(0, newChat);
         notifyListeners();
@@ -230,11 +261,15 @@ class ChatRepository extends ChangeNotifier {
     final body = {
       'content': content,
       'message_type': isGroup ? 'group' : 'private',
+      // YAML Spec: use 'group' (uuid) for groups, 'recipient_id' (uuid) for private
       if (isGroup) 'group': targetId else 'recipient_id': targetId,
     };
 
-    // Optimistic Update
-    final chatIndex = _chats.indexWhere((c) => isGroup ? c.id == targetId : c.participants.any((p) => p.id == targetId));
+    // Optimistic Update: Show message immediately before server confirms
+    final chatIndex = _chats.indexWhere((c) => isGroup
+        ? c.id == targetId
+        : c.participants.any((p) => p.id == targetId));
+
     if (chatIndex != -1) {
       final tempMsg = Message(
         id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
@@ -254,7 +289,10 @@ class ChatRepository extends ChangeNotifier {
       // Fetch latest to get the real ID and server timestamp
       await fetchMessagesForChat(targetId, isGroup);
     } catch (e) {
-      // Revert or mark failed if implementing offline support
+      if (chatIndex != -1) {
+        // Mark last message as failed if needed, or remove it
+        // For now, rethrowing allows the UI to handle the error
+      }
       rethrow;
     }
   }
@@ -266,6 +304,12 @@ class ChatRepository extends ChangeNotifier {
         'description': 'Created via Chatty'
       });
       final newChat = Chat.fromGroupJson(response);
+
+      // Optionally add members immediately if the API supports it in one go,
+      // otherwise iterate through members to add them.
+      // The provided YAML create_group only takes name/desc.
+      // Members must be added via /groups/{id}/join/ or similar logic not fully detailed in single-call.
+
       _chats.insert(0, newChat);
       notifyListeners();
       return newChat;
@@ -275,11 +319,12 @@ class ChatRepository extends ChangeNotifier {
   }
 
   void leaveGroup(String chatId) {
+    // Optimistic leave
     _chats.removeWhere((c) => c.id == chatId);
     notifyListeners();
+    // Actual API call
+    _api.post('/groups/$chatId/leave/', {});
   }
-
-  List<User> get filteredUsers => _allUsers;
 
   void _setLoading(bool val) {
     _isLoading = val;

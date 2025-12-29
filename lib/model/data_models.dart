@@ -16,6 +16,7 @@ class User {
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
       id: json['id']?.toString() ?? '',
+      // API Spec: 'username' is the display name. Fallback to email.
       name: json['username'] ?? json['email'] ?? 'Unknown',
       email: json['email'] ?? '',
       isOnline: false,
@@ -61,6 +62,7 @@ class Message {
   });
 
   factory Message.fromJson(Map<String, dynamic> json, String currentUserId) {
+    // API Spec: 'sender' is a full User object reference
     final senderData = json['sender'] is Map ? json['sender'] : {};
     final senderId = senderData['id']?.toString() ?? '';
     final senderName = senderData['username'] ?? 'Unknown';
@@ -70,6 +72,7 @@ class Message {
       senderId: senderId,
       senderName: senderName,
       text: json['content'] ?? '',
+      // API Spec: 'created_at'
       timestamp: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
       isMe: senderId == currentUserId,
       status: MessageStatus.sent,
