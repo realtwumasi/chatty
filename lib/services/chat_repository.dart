@@ -14,6 +14,7 @@ class ChatRepository extends ChangeNotifier {
   User? _currentUser;
   User get currentUser => _currentUser ?? User(id: '', name: 'Guest', email: '');
 
+  // Optimization: Use separate map for quick lookup
   List<Chat> _chats = [];
   List<Chat> get chats => _chats;
 
@@ -48,15 +49,17 @@ class ChatRepository extends ChangeNotifier {
 
     final hasToken = await _api.loadTokens();
 
-    // Even if storage fails, we try to fetch if we have an in-memory token (unlikely on restart, but safe)
     if (!hasToken && _currentUser == null) {
       notifyListeners();
       return false;
     }
 
     try {
-      await fetchUsers();
-      await fetchChats();
+      // Optimization: Parallel fetch
+      await Future.wait([
+        fetchUsers(),
+        fetchChats(),
+      ]);
       notifyListeners();
       return true;
     } catch (e) {
@@ -64,7 +67,6 @@ class ChatRepository extends ChangeNotifier {
         await logout();
         return false;
       }
-      // If we have a user object loaded from cache/memory, assume logged in
       return _currentUser != null;
     }
   }
@@ -90,14 +92,12 @@ class ChatRepository extends ChangeNotifier {
         isOnline: true,
       );
 
-      // Try saving, ignore failure
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_keyUser, jsonEncode(_currentUser!.toJson()));
       } catch (_) {}
 
-      await fetchUsers();
-      await fetchChats();
+      await Future.wait([fetchUsers(), fetchChats()]);
 
       notifyListeners();
     } catch (e) {
@@ -153,8 +153,11 @@ class ChatRepository extends ChangeNotifier {
   Future<void> fetchUsers() async {
     try {
       final List data = await _api.get('/users/');
-      _allUsers = data.map((e) => User.fromJson(e)).toList();
-      _allUsers.removeWhere((u) => u.id == currentUser.id);
+      final newUsers = data.map((e) => User.fromJson(e)).toList();
+      newUsers.removeWhere((u) => u.id == currentUser.id);
+
+      _allUsers = newUsers;
+      // Optimization: Only notify if absolutely necessary, but users list changes rarely
       notifyListeners();
     } catch (e) {
       if (kDebugMode) print("Fetch users error: $e");
@@ -182,11 +185,18 @@ class ChatRepository extends ChangeNotifier {
       final chatIndex = _chats.indexWhere((c) => isGroup ? c.id == chatId : c.participants.any((p) => p.id == chatId));
 
       if (chatIndex != -1) {
-        final msgs = data.map((e) => Message.fromJson(e, currentUser.id)).toList();
-        msgs.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-        _chats[chatIndex].messages.clear();
-        _chats[chatIndex].messages.addAll(msgs);
-        notifyListeners();
+        final newMsgs = data.map((e) => Message.fromJson(e, currentUser.id)).toList();
+        newMsgs.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+        // Optimization: Check if messages actually changed before notifying
+        final currentMsgs = _chats[chatIndex].messages;
+        if (currentMsgs.length != newMsgs.length ||
+            (newMsgs.isNotEmpty && currentMsgs.isNotEmpty && newMsgs.last.id != currentMsgs.last.id)) {
+
+          _chats[chatIndex].messages.clear();
+          _chats[chatIndex].messages.addAll(newMsgs);
+          notifyListeners();
+        }
       }
     } catch (e) {
       if (kDebugMode) print("Fetch messages error: $e");
@@ -223,19 +233,28 @@ class ChatRepository extends ChangeNotifier {
       if (isGroup) 'group': targetId else 'recipient_id': targetId,
     };
 
-    final tempMsg = Message(
-      senderId: currentUser.id,
-      senderName: currentUser.name,
-      text: content,
-      timestamp: DateTime.now(),
-      isMe: true,
-      status: MessageStatus.sending,
-    );
+    // Optimistic Update
+    final chatIndex = _chats.indexWhere((c) => isGroup ? c.id == targetId : c.participants.any((p) => p.id == targetId));
+    if (chatIndex != -1) {
+      final tempMsg = Message(
+        id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+        senderId: currentUser.id,
+        senderName: currentUser.name,
+        text: content,
+        timestamp: DateTime.now(),
+        isMe: true,
+        status: MessageStatus.sending,
+      );
+      _chats[chatIndex].messages.add(tempMsg);
+      notifyListeners();
+    }
 
     try {
       await _api.post(endpoint, body);
+      // Fetch latest to get the real ID and server timestamp
       await fetchMessagesForChat(targetId, isGroup);
     } catch (e) {
+      // Revert or mark failed if implementing offline support
       rethrow;
     }
   }

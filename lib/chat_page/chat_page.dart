@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../model/data_models.dart';
 import '../model/responsive_helper.dart';
-import '../services/chat_repository.dart'; // Updated
+import '../services/chat_repository.dart';
 
 class ChatPage extends StatefulWidget {
   final Chat chat;
@@ -23,7 +24,6 @@ class _ChatPageState extends State<ChatPage> {
   final ScrollController _scrollController = ScrollController();
   final ChatRepository _repository = ChatRepository();
 
-  // Local reference to track updates
   late Chat _currentChat;
 
   @override
@@ -33,6 +33,9 @@ class _ChatPageState extends State<ChatPage> {
     _repository.addListener(_updateUI);
     // Fetch latest messages from API
     _repository.fetchMessagesForChat(_currentChat.id, _currentChat.isGroup);
+
+    // Optimization: Scroll to bottom after frame
+    SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
   }
 
   @override
@@ -41,6 +44,7 @@ class _ChatPageState extends State<ChatPage> {
     if (oldWidget.chat.id != widget.chat.id) {
       _currentChat = widget.chat;
       _repository.fetchMessagesForChat(_currentChat.id, _currentChat.isGroup);
+      _messageController.clear();
     }
   }
 
@@ -54,21 +58,21 @@ class _ChatPageState extends State<ChatPage> {
 
   void _updateUI() {
     if (!mounted) return;
-    // Update local chat object reference from repository to get new messages
-    // We look for a chat with the same ID
     try {
       final updatedChat = _repository.chats.firstWhere((c) => c.id == widget.chat.id);
-      setState(() {
-        _currentChat = updatedChat;
-      });
-    } catch (_) {
-      // Chat might not be in the main list yet or list cleared
-    }
+
+      // Optimization: Only setState if content actually changed
+      if (updatedChat.messages.length != _currentChat.messages.length) {
+        setState(() {
+          _currentChat = updatedChat;
+        });
+        _scrollToBottom();
+      }
+    } catch (_) {}
   }
 
   void _sendMessage() {
     if (_messageController.text.trim().isNotEmpty) {
-      // Use repository to send. It handles optimistic updates.
       _repository.sendMessage(
           _currentChat.id,
           _messageController.text.trim(),
@@ -79,14 +83,19 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  void _scrollToBottom() {
-    Future.delayed(const Duration(milliseconds: 100), () {
+  void _scrollToBottom({bool animated = true}) {
+    // Optimization: Use scheduler to ensure layout is ready
+    SchedulerBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
+        if (animated) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        } else {
+          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+        }
       }
     });
   }
@@ -122,6 +131,9 @@ class _ChatPageState extends State<ChatPage> {
       );
     }
   }
+
+  // ... rest of the helper methods (_showGroupInfo, etc) remain effectively the same
+  // but we can optimize the build method below
 
   void _showGroupInfo() {
     _showResponsiveModal(
@@ -252,6 +264,8 @@ class _ChatPageState extends State<ChatPage> {
             child: ListView.builder(
               controller: _scrollController,
               padding: EdgeInsets.symmetric(horizontal: 15.w, vertical: 10.h),
+              // Optimization: cacheExtent for smoother scrolling
+              cacheExtent: 500,
               itemCount: _currentChat.messages.length,
               itemBuilder: (context, index) {
                 final message = _currentChat.messages[index];

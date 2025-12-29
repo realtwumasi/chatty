@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart'; // Keep for .h/.w context
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../model/data_models.dart';
 import '../../model/responsive_helper.dart';
 
@@ -26,24 +26,17 @@ class MessageTile extends StatelessWidget {
         ? (isDark ? Colors.white.withOpacity(0.1) : Colors.blue.withOpacity(0.1))
         : null;
 
-    final String lastMessage = chat.messages.isNotEmpty
-        ? chat.messages.last.text
-        : "No messages yet";
+    // Optimization: Use computed getters from Chat model
+    final String lastMessage = chat.lastMessagePreview;
+    final String time = chat.lastMessageTime;
 
-    final String time = chat.messages.isNotEmpty
-        ? "${chat.messages.last.timestamp.hour}:${chat.messages.last.timestamp.minute.toString().padLeft(2, '0')}"
-        : "";
-
-    // Sizing Logic:
-    // On Mobile: Use .r, .sp, .w for scaling.
-    // On Desktop: Use fixed values to prevent elements from becoming huge.
+    // Sizing Logic
     final double avatarRadius = isDesktop ? 24 : 28.r;
     final double titleSize = Responsive.fontSize(context, 16);
     final double subtitleSize = Responsive.fontSize(context, 14);
     final double timeSize = Responsive.fontSize(context, 12);
     final double iconSize = isDesktop ? 24 : 28.sp;
 
-    // Fix: Use fixed logical pixels for spacing on Desktop
     final double gapSize = isDesktop ? 12 : 15.w;
     final double badgePadding = isDesktop ? 6 : 6.w;
     final double badgeMargin = isDesktop ? 8 : 8.w;
@@ -78,7 +71,6 @@ class MessageTile extends StatelessWidget {
                   ),
                 ),
               ),
-              // Fix: Adjusted gap size to be tighter on desktop
               SizedBox(width: gapSize),
               Expanded(
                 child: Column(
@@ -130,7 +122,6 @@ class MessageTile extends StatelessWidget {
                         ),
                         if (chat.unreadCount > 0)
                           Container(
-                            // Fix: Adjusted margin and padding for badge
                             margin: EdgeInsets.only(left: badgeMargin),
                             padding: EdgeInsets.all(badgePadding),
                             decoration: const BoxDecoration(

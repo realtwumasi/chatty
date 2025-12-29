@@ -16,10 +16,8 @@ class User {
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
       id: json['id']?.toString() ?? '',
-      // API returns 'username', fallback to 'email' if missing
       name: json['username'] ?? json['email'] ?? 'Unknown',
       email: json['email'] ?? '',
-      // API doesn't seem to have is_online in User schema, defaulting to false
       isOnline: false,
     );
   }
@@ -44,7 +42,7 @@ class User {
 class Message {
   final String id;
   final String senderId;
-  final String senderName; // Added to handle UI needs
+  final String senderName;
   final String text;
   final DateTime timestamp;
   final bool isMe;
@@ -63,7 +61,6 @@ class Message {
   });
 
   factory Message.fromJson(Map<String, dynamic> json, String currentUserId) {
-    // API returns 'sender' as a full User object
     final senderData = json['sender'] is Map ? json['sender'] : {};
     final senderId = senderData['id']?.toString() ?? '';
     final senderName = senderData['username'] ?? 'Unknown';
@@ -75,10 +72,20 @@ class Message {
       text: json['content'] ?? '',
       timestamp: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
       isMe: senderId == currentUserId,
-      isSystem: false, // API doesn't specify system messages yet
-      status: MessageStatus.sent, // Defaulting as API doesn't return status enum
+      status: MessageStatus.sent,
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is Message &&
+              runtimeType == other.runtimeType &&
+              id == other.id &&
+              status == other.status;
+
+  @override
+  int get hashCode => id.hashCode ^ status.hashCode;
 }
 
 class Chat {
@@ -100,15 +107,40 @@ class Chat {
     this.eventLog = const [],
   });
 
-  // Helper to create a Chat from a Group API response
   factory Chat.fromGroupJson(Map<String, dynamic> json) {
     return Chat(
       id: json['id']?.toString() ?? '',
       name: json['name'] ?? 'Group Chat',
       isGroup: true,
-      unreadCount: 0, // Not provided in group list directly
-      messages: [], // Messages fetched separately
-      participants: [], // Fetched via /groups/{id}/members/
+      unreadCount: 0,
+      messages: [],
+      participants: [],
     );
   }
+
+  // Optimization: Cached-like getters for UI
+  String get lastMessagePreview {
+    if (messages.isEmpty) return "No messages yet";
+    return messages.last.text;
+  }
+
+  String get lastMessageTime {
+    if (messages.isEmpty) return "";
+    final last = messages.last.timestamp;
+    return "${last.hour}:${last.minute.toString().padLeft(2, '0')}";
+  }
+
+  // Optimization: Equality check to prevent unnecessary rebuilds
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is Chat &&
+              runtimeType == other.runtimeType &&
+              id == other.id &&
+              unreadCount == other.unreadCount &&
+              messages.length == other.messages.length &&
+              (messages.isEmpty || messages.last == other.messages.last);
+
+  @override
+  int get hashCode => id.hashCode ^ unreadCount.hashCode ^ messages.length.hashCode;
 }
