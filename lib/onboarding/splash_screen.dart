@@ -1,5 +1,6 @@
 import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:lottie/lottie.dart';
 import '../home/home_page.dart';
@@ -7,14 +8,14 @@ import '../model/responsive_helper.dart';
 import '../services/chat_repository.dart';
 import 'sign_in_page.dart';
 
-class SplashScreen extends StatefulWidget {
+class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
 
   @override
-  State<SplashScreen> createState() => _SplashScreenState();
+  ConsumerState<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> {
+class _SplashScreenState extends ConsumerState<SplashScreen> {
 
   @override
   void initState() {
@@ -23,11 +24,10 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   void _checkAuth() async {
-    // Wait at least 2 seconds for branding
     await Future.delayed(const Duration(seconds: 2));
 
-    // Check if user is logged in via SharedPrefs
-    final isLoggedIn = await ChatRepository().initialize();
+    // Use Riverpod provider
+    final isLoggedIn = await ref.read(chatRepositoryProvider).initialize();
 
     if (!mounted) return;
 

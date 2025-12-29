@@ -1,28 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import '../services/chat_repository.dart'; // Updated
+import 'services/chat_repository.dart';
 import 'chat_page/chat_page.dart';
 import 'model/data_models.dart';
 import 'model/responsive_helper.dart';
 
-class CreateGroupPage extends StatefulWidget {
+class CreateGroupPage extends ConsumerStatefulWidget {
   const CreateGroupPage({super.key});
 
   @override
-  State<CreateGroupPage> createState() => _CreateGroupPageState();
+  ConsumerState<CreateGroupPage> createState() => _CreateGroupPageState();
 }
 
-class _CreateGroupPageState extends State<CreateGroupPage> {
+class _CreateGroupPageState extends ConsumerState<CreateGroupPage> {
   final TextEditingController _groupNameController = TextEditingController();
-  final ChatRepository _repository = ChatRepository();
   final Set<User> _selectedUsers = {};
 
   @override
   void initState() {
     super.initState();
-    if (_repository.allUsers.isEmpty) {
-      _repository.fetchUsers();
-    }
+    // Fetch users when the page loads so we have a list to choose from
+    ref.read(chatRepositoryProvider).fetchUsers();
   }
 
   @override
@@ -32,6 +31,9 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
     final textColor = Theme.of(context).colorScheme.onSurface;
     final inputFillColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
     final hintColor = isDark ? Colors.grey[400]! : Colors.grey[600]!;
+
+    // Watch the list of all users from Riverpod state
+    final allUsers = ref.watch(allUsersProvider);
 
     return Scaffold(
       backgroundColor: backgroundColor,
@@ -51,9 +53,8 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
           TextButton(
             onPressed: () async {
               if (_groupNameController.text.isNotEmpty) {
-                // Note: API might support adding members during create, or we might need to do it after.
-                // Assuming repo handles it.
-                final chat = await _repository.createGroup(
+                // Call createGroup from the repository
+                final chat = await ref.read(chatRepositoryProvider).createGroup(
                     _groupNameController.text.trim(),
                     _selectedUsers.toList()
                 );
@@ -113,44 +114,38 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
             SizedBox(height: 10.h),
 
             Expanded(
-              // Using repository data directly
-              child: ListenableBuilder(
-                  listenable: _repository,
-                  builder: (context, _) {
-                    return ListView.builder(
-                      itemCount: _repository.allUsers.length,
-                      itemBuilder: (context, index) {
-                        final user = _repository.allUsers[index];
-                        final isSelected = _selectedUsers.contains(user);
+              child: ListView.builder(
+                itemCount: allUsers.length,
+                itemBuilder: (context, index) {
+                  final user = allUsers[index];
+                  final isSelected = _selectedUsers.contains(user);
 
-                        return CheckboxListTile(
-                          value: isSelected,
-                          activeColor: const Color(0xFF1A60FF),
-                          checkColor: Colors.white,
-                          side: BorderSide(color: hintColor),
-                          secondary: CircleAvatar(
-                            backgroundColor: isDark ? Colors.grey[700] : Colors.grey[300],
-                            radius: Responsive.radius(context, 20),
-                            child: Text(
-                                user.name.isNotEmpty ? user.name[0] : '?',
-                                style: TextStyle(color: Colors.white, fontSize: Responsive.fontSize(context, 16))
-                            ),
-                          ),
-                          title: Text(user.name, style: TextStyle(fontSize: Responsive.fontSize(context, 16), fontWeight: FontWeight.w500, color: textColor)),
-                          subtitle: Text(user.email, style: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14))),
-                          onChanged: (bool? selected) {
-                            setState(() {
-                              if (selected == true) {
-                                _selectedUsers.add(user);
-                              } else {
-                                _selectedUsers.remove(user);
-                              }
-                            });
-                          },
-                        );
-                      },
-                    );
-                  }
+                  return CheckboxListTile(
+                    value: isSelected,
+                    activeColor: const Color(0xFF1A60FF),
+                    checkColor: Colors.white,
+                    side: BorderSide(color: hintColor),
+                    secondary: CircleAvatar(
+                      backgroundColor: isDark ? Colors.grey[700] : Colors.grey[300],
+                      radius: Responsive.radius(context, 20),
+                      child: Text(
+                          user.name.isNotEmpty ? user.name[0] : '?',
+                          style: TextStyle(color: Colors.white, fontSize: Responsive.fontSize(context, 16))
+                      ),
+                    ),
+                    title: Text(user.name, style: TextStyle(fontSize: Responsive.fontSize(context, 16), fontWeight: FontWeight.w500, color: textColor)),
+                    subtitle: Text(user.email, style: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14))),
+                    onChanged: (bool? selected) {
+                      setState(() {
+                        if (selected == true) {
+                          _selectedUsers.add(user);
+                        } else {
+                          _selectedUsers.remove(user);
+                        }
+                      });
+                    },
+                  );
+                },
               ),
             ),
           ],

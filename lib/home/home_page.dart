@@ -1,41 +1,30 @@
 import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../chat_page/chat_page.dart';
 import '../model/data_models.dart';
 import '../model/responsive_helper.dart';
 import '../new_message_page.dart';
-import '../services/chat_repository.dart'; // Updated
+import '../services/chat_repository.dart';
 import 'components/message_tile.dart';
-import '../onboarding/sign_in_page.dart'; // For logout redirect
+import '../onboarding/sign_in_page.dart';
 
-class HomePage extends StatefulWidget {
+class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  ConsumerState<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
-  final ChatRepository _repository = ChatRepository();
+class _HomePageState extends ConsumerState<HomePage> {
   Chat? _selectedChat;
 
   @override
   void initState() {
     super.initState();
-    _repository.addListener(_refresh);
-    // Ensure we have latest data
-    _repository.fetchChats();
-  }
-
-  @override
-  void dispose() {
-    _repository.removeListener(_refresh);
-    super.dispose();
-  }
-
-  void _refresh() {
-    if (mounted) setState(() {});
+    // Use ref.read to start fetching (fire and forget)
+    ref.read(chatRepositoryProvider).fetchChats();
   }
 
   void _onChatSelected(Chat chat) {
@@ -48,7 +37,7 @@ class _HomePageState extends State<HomePage> {
       Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => ChatPage(chat: chat)),
-      ).then((_) => _refresh()); // Refresh on return to update read status/last msg
+      );
     }
   }
 
@@ -64,7 +53,7 @@ class _HomePageState extends State<HomePage> {
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
-              await _repository.logout();
+              await ref.read(chatRepositoryProvider).logout();
               if (mounted) {
                 Navigator.pushAndRemoveUntil(
                   context,
@@ -112,6 +101,16 @@ class _HomePageState extends State<HomePage> {
     final textColor = Theme.of(context).colorScheme.onSurface;
     final borderColor = isDark ? Colors.grey[800]! : Colors.grey[300]!;
 
+    // In desktop mode, we might need to react to the selected chat updating
+    final chatList = ref.watch(chatListProvider);
+    // If selected chat was updated in the list, update our local reference
+    if (_selectedChat != null) {
+      final updated = chatList.where((c) => c.id == _selectedChat!.id).firstOrNull;
+      if (updated != null && updated != _selectedChat) {
+        _selectedChat = updated;
+      }
+    }
+
     return Scaffold(
       backgroundColor: backgroundColor,
       body: Row(
@@ -155,6 +154,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildCompactUserProfile(bool isDark, Color textColor) {
+    final currentUser = ref.watch(userProvider) ?? User(id: '', name: '?', email: '');
+    final repo = ref.read(chatRepositoryProvider);
+
     return ListTile(
       tileColor: isDark ? Colors.grey[900] : Colors.grey[50],
       contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: Responsive.isDesktop(context) ? 8 : 4.h),
@@ -162,21 +164,21 @@ class _HomePageState extends State<HomePage> {
         backgroundColor: const Color(0xFF1A60FF),
         radius: Responsive.radius(context, 20),
         child: Text(
-            _repository.currentUser.name.isNotEmpty ? _repository.currentUser.name[0] : '?',
+            currentUser.name.isNotEmpty ? currentUser.name[0] : '?',
             style: TextStyle(color: Colors.white, fontSize: Responsive.fontSize(context, 16))
         ),
       ),
       title: Text(
-          _repository.currentUser.name,
+          currentUser.name,
           style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: Responsive.fontSize(context, 14))
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            icon: Icon(_repository.isDarkMode ? Icons.dark_mode : Icons.light_mode, color: textColor),
+            icon: Icon(ref.watch(themeProvider) ? Icons.dark_mode : Icons.light_mode, color: textColor),
             iconSize: Responsive.fontSize(context, 24),
-            onPressed: () => _repository.toggleTheme(),
+            onPressed: () => repo.toggleTheme(),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
           ),
@@ -194,14 +196,17 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildChatList() {
-    if (_repository.chats.isEmpty) {
-      if (_repository.isLoading) return const Center(child: CircularProgressIndicator());
+    final chats = ref.watch(chatListProvider);
+    final isLoading = ref.watch(isLoadingProvider);
+
+    if (chats.isEmpty) {
+      if (isLoading) return const Center(child: CircularProgressIndicator());
       return Center(child: Text("No chats yet", style: TextStyle(color: Colors.grey[400])));
     }
     return ListView.builder(
-      itemCount: _repository.chats.length,
+      itemCount: chats.length,
       itemBuilder: (context, index) {
-        final chat = _repository.chats[index];
+        final chat = chats[index];
         return MessageTile(
           chat: chat,
           isSelected: _selectedChat?.id == chat.id,
@@ -260,6 +265,9 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildDrawer(bool isDark, Color textColor) {
     final drawerColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+    final currentUser = ref.watch(userProvider) ?? User(id: '', name: 'Guest', email: '');
+    final repo = ref.read(chatRepositoryProvider);
+
     return Drawer(
       backgroundColor: drawerColor,
       child: Column(
@@ -269,17 +277,21 @@ class _HomePageState extends State<HomePage> {
             currentAccountPicture: CircleAvatar(
               backgroundColor: Colors.white,
               child: Text(
-                _repository.currentUser.name.isNotEmpty ? _repository.currentUser.name[0] : '?',
+                currentUser.name.isNotEmpty ? currentUser.name[0] : '?',
                 style: TextStyle(fontSize: 24.sp, fontWeight: FontWeight.bold, color: const Color(0xFF1A60FF)),
               ),
             ),
-            accountName: Text(_repository.currentUser.name, style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
-            accountEmail: Text(_repository.currentUser.email),
+            accountName: Text(currentUser.name, style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
+            accountEmail: Text(currentUser.email),
           ),
           ListTile(
-            leading: Icon(_repository.isDarkMode ? Icons.dark_mode : Icons.light_mode, color: textColor),
+            leading: Icon(ref.watch(themeProvider) ? Icons.dark_mode : Icons.light_mode, color: textColor),
             title: Text("Dark Mode", style: TextStyle(color: textColor)),
-            trailing: Switch(value: _repository.isDarkMode, activeColor: const Color(0xFF1A60FF), onChanged: (val) => _repository.toggleTheme()),
+            trailing: Switch(
+                value: ref.watch(themeProvider),
+                activeColor: const Color(0xFF1A60FF),
+                onChanged: (val) => repo.toggleTheme()
+            ),
           ),
           const Spacer(),
           Divider(color: isDark ? Colors.grey[800] : Colors.grey[300]),

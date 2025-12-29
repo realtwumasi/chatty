@@ -1,32 +1,29 @@
 import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../home/home_page.dart';
 import '../model/responsive_helper.dart';
 import '../services/chat_repository.dart';
 import 'create_account.dart';
 
-class SignInPage extends StatefulWidget {
+class SignInPage extends ConsumerStatefulWidget {
   const SignInPage({super.key});
 
   @override
-  State<SignInPage> createState() => _SignInPageState();
+  ConsumerState<SignInPage> createState() => _SignInPageState();
 }
 
-class _SignInPageState extends State<SignInPage> {
+class _SignInPageState extends ConsumerState<SignInPage> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _username = TextEditingController();
   final TextEditingController _password = TextEditingController();
 
-  final ChatRepository _repository = ChatRepository();
-  bool _isLoading = false;
-
   void _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isLoading = true);
     try {
-      await _repository.login(_username.text.trim(), _password.text.trim());
+      await ref.read(chatRepositoryProvider).login(_username.text.trim(), _password.text.trim());
 
       if (mounted) {
         Navigator.pushReplacement(
@@ -43,13 +40,15 @@ class _SignInPageState extends State<SignInPage> {
             )
         );
       }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Watch loading state
+    final isLoading = ref.watch(isLoadingProvider);
+
+    // ... UI Code remains largely the same, just removed local _isLoading state ...
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
     final textColor = Theme.of(context).colorScheme.onSurface;
@@ -75,6 +74,7 @@ class _SignInPageState extends State<SignInPage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
+                      // ... Branding ...
                       AnimatedTextKit(
                         animatedTexts: [
                           TypewriterAnimatedText(
@@ -89,18 +89,8 @@ class _SignInPageState extends State<SignInPage> {
                         ],
                         totalRepeatCount: 1,
                       ),
-                      SizedBox(height: isDesktop ? 8 : 8.h),
-                      Text(
-                        "Welcome back",
-                        style: TextStyle(
-                          fontWeight: FontWeight.w400,
-                          fontSize: Responsive.fontSize(context, 16),
-                          color: isDark ? Colors.grey[400] : Colors.grey.shade600,
-                        ),
-                      ),
-                      SizedBox(height: isDesktop ? 40 : 40.h),
+                      SizedBox(height: 40.h),
 
-                      // Identifier Input
                       TextFormField(
                         controller: _username,
                         style: TextStyle(color: textColor),
@@ -120,9 +110,7 @@ class _SignInPageState extends State<SignInPage> {
                           ),
                         ),
                       ),
-                      SizedBox(height: isDesktop ? 16 : 16.h),
-
-                      // Password Input
+                      SizedBox(height: 16.h),
                       TextFormField(
                         controller: _password,
                         obscureText: true,
@@ -143,22 +131,19 @@ class _SignInPageState extends State<SignInPage> {
                           ),
                         ),
                       ),
-                      SizedBox(height: isDesktop ? 25 : 25.h),
-
-                      // Login Button
+                      SizedBox(height: 25.h),
                       ElevatedButton(
-                        onPressed: _isLoading ? null : _handleLogin,
+                        onPressed: isLoading ? null : _handleLogin,
                         style: ElevatedButton.styleFrom(
                           minimumSize: Size(double.infinity, buttonHeight),
                           backgroundColor: const Color(0xFF1A60FF),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        child: _isLoading
+                        child: isLoading
                             ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                             : Text("Log in", style: TextStyle(color: Colors.white, fontSize: Responsive.fontSize(context, 16))),
                       ),
-                      SizedBox(height: isDesktop ? 16 : 16.h),
-
+                      SizedBox(height: 16.h),
                       TextButton(
                         onPressed: () {
                           Navigator.push(

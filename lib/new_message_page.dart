@@ -1,58 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import '../services/chat_repository.dart';
+import 'services/chat_repository.dart';
 import 'chat_page/chat_page.dart';
 import 'create_group_page.dart';
 import 'model/data_models.dart';
 import 'model/responsive_helper.dart';
 
-class NewMessagePage extends StatefulWidget {
+class NewMessagePage extends ConsumerStatefulWidget {
   const NewMessagePage({super.key});
 
   @override
-  State<NewMessagePage> createState() => _NewMessagePageState();
+  ConsumerState<NewMessagePage> createState() => _NewMessagePageState();
 }
 
-class _NewMessagePageState extends State<NewMessagePage> {
+class _NewMessagePageState extends ConsumerState<NewMessagePage> {
   final TextEditingController _searchController = TextEditingController();
-  final ChatRepository _repository = ChatRepository();
-  List<User> _filteredUsers = [];
+  String _searchQuery = "";
 
   @override
   void initState() {
     super.initState();
-    if (_repository.allUsers.isEmpty) {
-      _repository.fetchUsers();
-    }
-    _filteredUsers = _repository.allUsers;
-    _repository.addListener(_updateUsers);
+    ref.read(chatRepositoryProvider).fetchUsers();
   }
 
   @override
   void dispose() {
-    _repository.removeListener(_updateUsers);
     _searchController.dispose();
     super.dispose();
-  }
-
-  void _updateUsers() {
-    if (mounted) {
-      _filterUsers(_searchController.text);
-    }
-  }
-
-  void _filterUsers(String query) {
-    setState(() {
-      if (query.isEmpty) {
-        _filteredUsers = _repository.allUsers;
-      } else {
-        _filteredUsers = _repository.allUsers
-            .where((user) =>
-        user.name.toLowerCase().contains(query.toLowerCase()) ||
-            user.email.toLowerCase().contains(query.toLowerCase()))
-            .toList();
-      }
-    });
   }
 
   @override
@@ -63,6 +38,11 @@ class _NewMessagePageState extends State<NewMessagePage> {
     final cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
     final hintColor = isDark ? Colors.grey[400] : Colors.grey[500];
     final isDesktop = Responsive.isDesktop(context);
+
+    final allUsers = ref.watch(allUsersProvider);
+    final filteredUsers = _searchQuery.isEmpty
+        ? allUsers
+        : allUsers.where((u) => u.name.toLowerCase().contains(_searchQuery.toLowerCase()) || u.email.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
 
     return Scaffold(
       backgroundColor: backgroundColor,
@@ -96,7 +76,7 @@ class _NewMessagePageState extends State<NewMessagePage> {
                 ),
                 child: TextField(
                   controller: _searchController,
-                  onChanged: _filterUsers,
+                  onChanged: (val) => setState(() => _searchQuery = val),
                   style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16)),
                   decoration: InputDecoration(
                     hintText: "Search users...",
@@ -147,48 +127,40 @@ class _NewMessagePageState extends State<NewMessagePage> {
             Divider(height: 1, thickness: 0.5, color: isDark ? Colors.grey[800] : Colors.grey[300]),
 
             Expanded(
-              // Fix: Added explicit generic types <User> to ListView.builder isn't strictly necessary but helpful
               child: ListView.builder(
-                itemCount: _filteredUsers.length,
-                // Fix: Renamed context to itemContext to avoid shadowing the parent context
-                itemBuilder: (itemContext, index) {
-                  final user = _filteredUsers[index];
+                itemCount: filteredUsers.length,
+                itemBuilder: (context, index) {
+                  final user = filteredUsers[index];
                   return ListTile(
                     contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 4.h),
                     leading: CircleAvatar(
                       backgroundColor: isDark ? Colors.grey[700] : Colors.grey[300],
-                      radius: Responsive.radius(itemContext, 25),
+                      radius: Responsive.radius(context, 25),
                       child: Text(
                         user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
                         style: TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
-                            fontSize: Responsive.fontSize(itemContext, 18)),
+                            fontSize: Responsive.fontSize(context, 18)),
                       ),
                     ),
                     title: Text(
                       user.name,
                       style: TextStyle(
                           fontWeight: FontWeight.w600,
-                          fontSize: Responsive.fontSize(itemContext, 16),
+                          fontSize: Responsive.fontSize(context, 16),
                           color: textColor
                       ),
                     ),
-                    subtitle: Text(user.email, style: TextStyle(color: hintColor, fontSize: Responsive.fontSize(itemContext, 14))),
+                    subtitle: Text(user.email, style: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14))),
                     onTap: () async {
-                      // 1. Create/Get Chat via API
-                      // Fix: createPrivateChat is now definitely in the repo
-                      final chat = await _repository.createPrivateChat(user);
+                      // Use repo method
+                      final chat = await ref.read(chatRepositoryProvider).startPrivateChat(user);
 
-                      // Fix: Use 'mounted' property of the State, not the itemContext which might be detached
                       if (mounted) {
-                        // 2. Logic: Desktop vs Mobile
                         if (isDesktop) {
-                          // Desktop: Close the modal.
-                          // Using context (from build) because itemContext might be unstable
                           Navigator.pop(context);
                         } else {
-                          // Mobile: Navigate to the full chat screen.
                           Navigator.pushReplacement(
                             context,
                             MaterialPageRoute(builder: (context) => ChatPage(chat: chat)),

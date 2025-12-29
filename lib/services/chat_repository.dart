@@ -1,30 +1,28 @@
 import 'dart:convert';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../model/data_models.dart';
 import 'api_service.dart';
 
-class ChatRepository extends ChangeNotifier {
-  static final ChatRepository _instance = ChatRepository._internal();
-  factory ChatRepository() => _instance;
-  ChatRepository._internal();
+// --- Providers ---
 
+final chatRepositoryProvider = Provider((ref) => ChatRepository(ref));
+
+final userProvider = StateProvider<User?>((ref) => null);
+final chatListProvider = StateProvider<List<Chat>>((ref) => []);
+final allUsersProvider = StateProvider<List<User>>((ref) => []);
+final isLoadingProvider = StateProvider<bool>((ref) => false);
+final themeProvider = StateProvider<bool>((ref) => false);
+
+// --- Repository Logic ---
+
+class ChatRepository {
+  final Ref _ref;
   final ApiService _api = ApiService();
 
-  User? _currentUser;
-  User get currentUser => _currentUser ?? User(id: '', name: 'Guest', email: '');
-
-  List<Chat> _chats = [];
-  List<Chat> get chats => _chats;
-
-  List<User> _allUsers = [];
-  List<User> get allUsers => _allUsers;
-
-  bool _isLoading = false;
-  bool get isLoading => _isLoading;
-
-  bool _isDarkMode = false;
-  bool get isDarkMode => _isDarkMode;
+  ChatRepository(this._ref);
 
   static const String _keyUser = 'current_user';
   static const String _keyTheme = 'is_dark_mode';
@@ -34,12 +32,17 @@ class ChatRepository extends ChangeNotifier {
   Future<bool> initialize() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      _isDarkMode = prefs.getBool(_keyTheme) ?? false;
 
+      // Load Theme
+      final isDark = prefs.getBool(_keyTheme) ?? false;
+      _ref.read(themeProvider.notifier).state = isDark;
+
+      // Load User
       final userJson = prefs.getString(_keyUser);
       if (userJson != null) {
         try {
-          _currentUser = User.fromJson(jsonDecode(userJson));
+          final user = User.fromJson(jsonDecode(userJson));
+          _ref.read(userProvider.notifier).state = user;
         } catch (_) {}
       }
     } catch (e) {
@@ -47,33 +50,31 @@ class ChatRepository extends ChangeNotifier {
     }
 
     final hasToken = await _api.loadTokens();
+    final currentUser = _ref.read(userProvider);
 
-    if (!hasToken && _currentUser == null) {
-      notifyListeners();
+    if (!hasToken && currentUser == null) {
       return false;
     }
 
     try {
-      // Optimization: Parallel fetch
       await Future.wait([
         fetchUsers(),
         fetchChats(),
       ]);
-      notifyListeners();
       return true;
     } catch (e) {
       if (e.toString().contains('401')) {
         await logout();
         return false;
       }
-      return _currentUser != null;
+      return currentUser != null;
     }
   }
 
   // --- Auth ---
 
   Future<void> login(String username, String password) async {
-    _setLoading(true);
+    _ref.read(isLoadingProvider.notifier).state = true;
     try {
       final response = await _api.post('/auth/login/', {
         'identifier': username,
@@ -84,44 +85,43 @@ class ChatRepository extends ChangeNotifier {
       await _api.setTokens(access: tokens['access'], refresh: tokens['refresh']);
 
       final userData = response['user'];
-      _currentUser = User(
+      final user = User(
         id: userData['id']?.toString() ?? '',
         email: userData['email'] ?? '',
-        name: userData['username'] ?? username, // API uses username
+        name: userData['username'] ?? username,
         isOnline: true,
       );
 
+      _ref.read(userProvider.notifier).state = user;
+
       try {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_keyUser, jsonEncode(_currentUser!.toJson()));
+        await prefs.setString(_keyUser, jsonEncode(user.toJson()));
       } catch (_) {}
 
       await Future.wait([fetchUsers(), fetchChats()]);
 
-      notifyListeners();
     } catch (e) {
       rethrow;
     } finally {
-      _setLoading(false);
+      _ref.read(isLoadingProvider.notifier).state = false;
     }
   }
 
   Future<void> logout() async {
-    _currentUser = null;
-    _chats = [];
-    _allUsers = [];
+    _ref.read(userProvider.notifier).state = null;
+    _ref.read(chatListProvider.notifier).state = [];
+    _ref.read(allUsersProvider.notifier).state = [];
     await _api.clearTokens();
 
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_keyUser);
     } catch (_) {}
-
-    notifyListeners();
   }
 
   Future<void> register(String username, String email, String password) async {
-    _setLoading(true);
+    _ref.read(isLoadingProvider.notifier).state = true;
     try {
       await _api.post('/users/', {
         'username': username,
@@ -132,18 +132,18 @@ class ChatRepository extends ChangeNotifier {
     } catch (e) {
       rethrow;
     } finally {
-      _setLoading(false);
+      _ref.read(isLoadingProvider.notifier).state = false;
     }
   }
 
   // --- Theme ---
 
   Future<void> toggleTheme() async {
-    _isDarkMode = !_isDarkMode;
-    notifyListeners();
+    final current = _ref.read(themeProvider);
+    _ref.read(themeProvider.notifier).state = !current;
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_keyTheme, _isDarkMode);
+      await prefs.setBool(_keyTheme, !current);
     } catch (_) {}
   }
 
@@ -151,21 +151,19 @@ class ChatRepository extends ChangeNotifier {
 
   Future<void> fetchUsers() async {
     try {
-      // API returns PaginatedUserList: { count, next, previous, results: [] }
       final response = await _api.get('/users/');
-
       final List data = (response is Map && response.containsKey('results'))
           ? response['results']
           : [];
 
       final newUsers = data.map((e) => User.fromJson(e)).toList();
+      final currentUser = _ref.read(userProvider);
 
-      if (_currentUser != null) {
-        newUsers.removeWhere((u) => u.id == _currentUser!.id);
+      if (currentUser != null) {
+        newUsers.removeWhere((u) => u.id == currentUser.id);
       }
 
-      _allUsers = newUsers;
-      notifyListeners();
+      _ref.read(allUsersProvider.notifier).state = newUsers;
     } catch (e) {
       if (kDebugMode) print("Fetch users error: $e");
     }
@@ -173,15 +171,13 @@ class ChatRepository extends ChangeNotifier {
 
   Future<void> fetchChats() async {
     try {
-      // API returns PaginatedGroupList
       final response = await _api.get('/groups/');
-
       final List groupData = (response is Map && response.containsKey('results'))
           ? response['results']
           : [];
 
-      _chats = groupData.map((e) => Chat.fromGroupJson(e)).toList();
-      notifyListeners();
+      final newChats = groupData.map((e) => Chat.fromGroupJson(e)).toList();
+      _ref.read(chatListProvider.notifier).state = newChats;
     } catch (e) {
       if (kDebugMode) print("Fetch chats error: $e");
     }
@@ -189,56 +185,130 @@ class ChatRepository extends ChangeNotifier {
 
   Future<void> fetchMessagesForChat(String chatId, bool isGroup) async {
     try {
-      // API Parameters from YAML
+      // 1. Fetch group members if it's a group
+      if (isGroup) {
+        fetchGroupMembers(chatId).catchError((e){});
+      }
+
       final Map<String, String> params = isGroup
           ? {'group': chatId, 'message_type': 'group'}
           : {'recipient': chatId, 'message_type': 'private'};
 
-      // API returns PaginatedMessageList
       final response = await _api.get('/messages/', params: params);
 
       final List data = (response is Map && response.containsKey('results'))
           ? response['results']
           : [];
 
-      // Find the chat in local state to update
-      final chatIndex = _chats.indexWhere((c) => isGroup
+      // Update State
+      final currentUser = _ref.read(userProvider);
+      if (currentUser == null) return;
+
+      final chats = _ref.read(chatListProvider);
+      final chatIndex = chats.indexWhere((c) => isGroup
           ? c.id == chatId
           : c.participants.any((p) => p.id == chatId && p.id != currentUser.id));
 
       if (chatIndex != -1) {
         final newMsgs = data.map((e) => Message.fromJson(e, currentUser.id)).toList();
-
-        // Sort by timestamp (oldest first for ListView)
         newMsgs.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
-        // Optimization: Check if messages actually changed before notifying to reduce rebuilds
-        final currentMsgs = _chats[chatIndex].messages;
+        // Create a copy of the chat to trigger immutability update if needed
+        final updatedChat = Chat(
+          id: chats[chatIndex].id,
+          name: chats[chatIndex].name,
+          isGroup: chats[chatIndex].isGroup,
+          participants: chats[chatIndex].participants,
+          unreadCount: chats[chatIndex].unreadCount,
+          eventLog: chats[chatIndex].eventLog,
+          messages: newMsgs,
+        );
 
-        // Simple length check or last ID check for optimization
-        if (currentMsgs.length != newMsgs.length ||
-            (newMsgs.isNotEmpty && currentMsgs.isNotEmpty && newMsgs.last.id != currentMsgs.last.id)) {
-
-          _chats[chatIndex].messages.clear();
-          _chats[chatIndex].messages.addAll(newMsgs);
-          notifyListeners();
-        }
+        // Update list immutably
+        final newChatList = List<Chat>.from(chats);
+        newChatList[chatIndex] = updatedChat;
+        _ref.read(chatListProvider.notifier).state = newChatList;
       }
     } catch (e) {
       if (kDebugMode) print("Fetch messages error: $e");
     }
   }
 
+  Future<void> fetchGroupMembers(String chatId) async {
+    try {
+      final response = await _api.get('/groups/$chatId/members/');
+      final List data = (response is Map && response.containsKey('members')) ? response['members'] : [];
+      final newMembers = data.map((m) => User.fromJson(m['user'])).toList();
+
+      final chats = _ref.read(chatListProvider);
+      final chatIndex = chats.indexWhere((c) => c.id == chatId && c.isGroup);
+
+      if (chatIndex != -1) {
+        final currentChat = chats[chatIndex];
+
+        // --- System Message Logic (Joins/Leaves) ---
+        final oldMemberIds = currentChat.participants.map((u) => u.id).toSet();
+        final newMemberIds = newMembers.map((u) => u.id).toSet();
+        final List<Message> newSystemMessages = [];
+
+        if (oldMemberIds.isNotEmpty) {
+          for (var user in newMembers) {
+            if (!oldMemberIds.contains(user.id)) {
+              newSystemMessages.add(_createSystemMessage("${user.name} joined the group"));
+            }
+          }
+          for (var user in currentChat.participants) {
+            if (!newMemberIds.contains(user.id)) {
+              newSystemMessages.add(_createSystemMessage("${user.name} left the group"));
+            }
+          }
+        }
+
+        // --- Update State ---
+        final updatedMessages = List<Message>.from(currentChat.messages)..addAll(newSystemMessages);
+
+        final updatedChat = Chat(
+          id: currentChat.id,
+          name: currentChat.name,
+          isGroup: currentChat.isGroup,
+          messages: updatedMessages,
+          participants: newMembers,
+          unreadCount: currentChat.unreadCount,
+          eventLog: currentChat.eventLog,
+        );
+
+        final newChatList = List<Chat>.from(chats);
+        newChatList[chatIndex] = updatedChat;
+        _ref.read(chatListProvider.notifier).state = newChatList;
+      }
+    } catch (e) {
+      if (kDebugMode) print("Fetch group members error: $e");
+    }
+  }
+
+  Message _createSystemMessage(String text) {
+    return Message(
+        id: 'sys_${DateTime.now().millisecondsSinceEpoch}_${text.hashCode}',
+        senderId: 'system',
+        senderName: 'System',
+        text: text,
+        timestamp: DateTime.now(),
+        isMe: false,
+        isSystem: true,
+        status: MessageStatus.delivered
+    );
+  }
+
   // --- Actions ---
 
-  Future<Chat> createPrivateChat(User otherUser) async {
+  Future<Chat> startPrivateChat(User otherUser) async {
+    final chats = _ref.read(chatListProvider);
+    final currentUser = _ref.read(userProvider);
+    if (currentUser == null) throw Exception("User not logged in");
+
     try {
-      // Check if we already have a chat with this user
-      return _chats.firstWhere((c) => !c.isGroup && c.participants.any((p) => p.id == otherUser.id));
+      return chats.firstWhere((c) => !c.isGroup && c.participants.any((p) => p.id == otherUser.id));
     } catch (_) {
-      // If not, create a temporary local chat object
-      // Note: The API doesn't have an explicit "create private chat" endpoint.
-      // Messages create the thread implicitly.
       final newChat = Chat(
         id: otherUser.id,
         name: otherUser.name,
@@ -247,26 +317,26 @@ class ChatRepository extends ChangeNotifier {
         participants: [currentUser, otherUser],
       );
 
-      // Add to local list immediately for UI responsiveness
-      if (!_chats.any((c) => c.id == newChat.id)) {
-        _chats.insert(0, newChat);
-        notifyListeners();
-      }
+      // Add to state
+      _ref.read(chatListProvider.notifier).state = [newChat, ...chats];
       return newChat;
     }
   }
 
   Future<void> sendMessage(String targetId, String content, bool isGroup) async {
+    final currentUser = _ref.read(userProvider);
+    if (currentUser == null) return;
+
     final endpoint = '/messages/';
     final body = {
       'content': content,
       'message_type': isGroup ? 'group' : 'private',
-      // YAML Spec: use 'group' (uuid) for groups, 'recipient_id' (uuid) for private
       if (isGroup) 'group': targetId else 'recipient_id': targetId,
     };
 
-    // Optimistic Update: Show message immediately before server confirms
-    final chatIndex = _chats.indexWhere((c) => isGroup
+    // Optimistic Update
+    final chats = _ref.read(chatListProvider);
+    final chatIndex = chats.indexWhere((c) => isGroup
         ? c.id == targetId
         : c.participants.any((p) => p.id == targetId));
 
@@ -280,19 +350,27 @@ class ChatRepository extends ChangeNotifier {
         isMe: true,
         status: MessageStatus.sending,
       );
-      _chats[chatIndex].messages.add(tempMsg);
-      notifyListeners();
+
+      final updatedChat = Chat(
+        id: chats[chatIndex].id,
+        name: chats[chatIndex].name,
+        isGroup: chats[chatIndex].isGroup,
+        participants: chats[chatIndex].participants,
+        unreadCount: chats[chatIndex].unreadCount,
+        eventLog: chats[chatIndex].eventLog,
+        messages: [...chats[chatIndex].messages, tempMsg],
+      );
+
+      final newChatList = List<Chat>.from(chats);
+      newChatList[chatIndex] = updatedChat;
+      _ref.read(chatListProvider.notifier).state = newChatList;
     }
 
     try {
       await _api.post(endpoint, body);
-      // Fetch latest to get the real ID and server timestamp
       await fetchMessagesForChat(targetId, isGroup);
     } catch (e) {
-      if (chatIndex != -1) {
-        // Mark last message as failed if needed, or remove it
-        // For now, rethrowing allows the UI to handle the error
-      }
+      // Handle error state here if needed
       rethrow;
     }
   }
@@ -305,29 +383,34 @@ class ChatRepository extends ChangeNotifier {
       });
       final newChat = Chat.fromGroupJson(response);
 
-      // Optionally add members immediately if the API supports it in one go,
-      // otherwise iterate through members to add them.
-      // The provided YAML create_group only takes name/desc.
-      // Members must be added via /groups/{id}/join/ or similar logic not fully detailed in single-call.
+      final currentUser = _ref.read(userProvider);
+      if (currentUser != null) {
+        newChat.participants.add(currentUser);
+      }
 
-      _chats.insert(0, newChat);
-      notifyListeners();
+      final currentChats = _ref.read(chatListProvider);
+      _ref.read(chatListProvider.notifier).state = [newChat, ...currentChats];
+
       return newChat;
     } catch (e) {
       rethrow;
     }
   }
 
-  void leaveGroup(String chatId) {
-    // Optimistic leave
-    _chats.removeWhere((c) => c.id == chatId);
-    notifyListeners();
-    // Actual API call
-    _api.post('/groups/$chatId/leave/', {});
+  Future<void> joinGroup(String chatId) async {
+    try {
+      await _api.post('/groups/$chatId/join/', {});
+      await fetchGroupMembers(chatId);
+      await fetchChats();
+    } catch (e) {
+      rethrow;
+    }
   }
 
-  void _setLoading(bool val) {
-    _isLoading = val;
-    notifyListeners();
+  void leaveGroup(String chatId) {
+    final chats = _ref.read(chatListProvider);
+    final newChats = chats.where((c) => c.id != chatId).toList();
+    _ref.read(chatListProvider.notifier).state = newChats;
+    _api.post('/groups/$chatId/leave/', {});
   }
 }
