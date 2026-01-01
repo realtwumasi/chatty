@@ -34,13 +34,30 @@ class WebSocketService {
       _subscription = _channel!.stream.listen(
             (message) {
           if (kDebugMode) {
-            // print('WS Received: $message'); // Uncomment for deep debug
+            // print('WS Received: $message');
           }
-          try {
-            final data = jsonDecode(message);
-            _eventController.add(data);
-          } catch (e) {
-            print('WS Parse Error: $e');
+
+          // FIX: Handle multiple JSON objects in one message (NDJSON) or trailing newlines
+          // The error "Unexpected character at line 2" implies multiple lines of JSON.
+          if (message is String) {
+            final parts = message.split('\n');
+            for (var part in parts) {
+              if (part.trim().isEmpty) continue;
+              try {
+                final data = jsonDecode(part);
+                _eventController.add(data);
+              } catch (e) {
+                print('WS Parse Error for part: $e\nData: $part');
+              }
+            }
+          } else {
+            // Binary or other format, try direct decode if it's not string
+            try {
+              final data = jsonDecode(message);
+              _eventController.add(data);
+            } catch (e) {
+              print('WS Parse Error: $e');
+            }
           }
         },
         onDone: () {
@@ -133,6 +150,13 @@ class WebSocketService {
       if (groupId != null) 'group_id': groupId,
       if (recipientId != null) 'recipient_id': recipientId,
       'is_typing': isTyping,
+    });
+  }
+
+  void sendMarkRead(String? groupId, String? senderId) {
+    send('mark_read', {
+      if (groupId != null) 'group_id': groupId,
+      if (senderId != null) 'sender_id': senderId,
     });
   }
 }

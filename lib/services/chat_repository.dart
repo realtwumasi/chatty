@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../model/data_models.dart';
 import 'api_service.dart';
 
+
 // --- Providers ---
 
 final chatRepositoryProvider = Provider((ref) => ChatRepository(ref));
@@ -19,7 +20,6 @@ final isLoadingProvider = StateProvider<bool>((ref) => false);
 final themeProvider = StateProvider<bool>((ref) => false);
 final wsConnectionProvider = StateProvider<bool>((ref) => false);
 
-// Map<ChatId, Set<Username>> - Tracks who is typing in which chat
 final typingStatusProvider = StateProvider<Map<String, Set<String>>>((ref) => <String, Set<String>>{});
 
 // --- Repository Logic ---
@@ -29,8 +29,8 @@ class ChatRepository {
   final ApiService _api = ApiService();
   final WebSocketService _ws = WebSocketService();
 
-  // Keep track of timers to clear typing status automatically
   final Map<String, Timer> _typingTimers = {};
+  String? _activeChatId;
 
   ChatRepository(this._ref) {
     _ws.isConnected.addListener(() {
@@ -49,11 +49,9 @@ class ChatRepository {
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      // Load Theme
       final isDark = prefs.getBool(_keyTheme) ?? false;
       _ref.read(themeProvider.notifier).state = isDark;
 
-      // Load User
       final userJson = prefs.getString(_keyUser);
       if (userJson != null) {
         try {
@@ -62,7 +60,6 @@ class ChatRepository {
         } catch (_) {}
       }
 
-      // Load Local Chats
       final chatsJson = prefs.getString(_keyChats);
       if (chatsJson != null) {
         try {
@@ -93,7 +90,6 @@ class ChatRepository {
       }
     }
 
-    // Sync online data
     try {
       await Future.wait([
         fetchUsers(),
@@ -109,6 +105,46 @@ class ChatRepository {
     }
   }
 
+  // --- Active Chat Management ---
+  void enterChat(String chatId) {
+    _activeChatId = chatId;
+    final chats = _ref.read(chatListProvider);
+    final index = chats.indexWhere((c) => c.id == chatId);
+    if (index != -1 && chats[index].unreadCount > 0) {
+      final updatedChat = Chat(
+        id: chats[index].id,
+        name: chats[index].name,
+        isGroup: chats[index].isGroup,
+        participants: chats[index].participants,
+        messages: chats[index].messages,
+        unreadCount: 0,
+        eventLog: chats[index].eventLog,
+      );
+      final newChatList = List<Chat>.from(chats);
+      newChatList[index] = updatedChat;
+      _ref.read(chatListProvider.notifier).state = newChatList;
+      _saveChatsToLocal();
+
+      _sendReadReceipt(chats[index]);
+    }
+  }
+
+  void leaveChat() {
+    _activeChatId = null;
+  }
+
+  void _sendReadReceipt(Chat chat) {
+    if (chat.isGroup) {
+      _ws.sendMarkRead(chat.id, null);
+    } else {
+      final currentUser = _ref.read(userProvider);
+      final otherUser = chat.participants.firstWhere((u) => u.id != currentUser?.id, orElse: () => User(id: '', name: '', email: ''));
+      if (otherUser.id.isNotEmpty) {
+        _ws.sendMarkRead(null, otherUser.id);
+      }
+    }
+  }
+
   // --- WebSocket Logic ---
 
   void _initWebSocket(String token) {
@@ -117,6 +153,7 @@ class ChatRepository {
   }
 
   void _handleWebSocketEvent(Map<String, dynamic> event) {
+    // ... same as before
     final type = event['type'];
     final data = event['data'];
     final payload = (data is Map<String, dynamic>) ? data : event;
@@ -144,6 +181,10 @@ class ChatRepository {
         _handleUserLeft(payload);
         break;
 
+      case 'user_removed':
+        _handleUserRemoved(payload);
+        break;
+
       case 'typing_indicator':
         _handleTypingIndicator(payload);
         break;
@@ -151,6 +192,7 @@ class ChatRepository {
   }
 
   void _handleNewMessage(Map<String, dynamic> payload, bool isGroup) {
+    // ... same logic but wrap state updates
     final currentUser = _ref.read(userProvider);
     if (currentUser == null) return;
 
@@ -190,18 +232,20 @@ class ChatRepository {
           participants: [currentUser, otherUser],
           unreadCount: 1,
         );
-        _ref.read(chatListProvider.notifier).state = [newChat, ...chats];
-        _saveChatsToLocal();
+
+        // Use microtask to avoid build conflicts
+        Future.microtask(() {
+          _ref.read(chatListProvider.notifier).state = [newChat, ...chats];
+          _saveChatsToLocal();
+        });
         return;
       }
     }
 
     if (chatIndex != -1) {
       final currentChat = chats[chatIndex];
-      // Dedupe
       if (currentChat.messages.any((m) => m.id == newMessage.id)) return;
 
-      // Filter out temp 'sending' messages if they match content
       final filteredMessages = currentChat.messages.where((m) {
         if (m.isMe && m.status == MessageStatus.sending && m.text == newMessage.text) {
           return false;
@@ -212,13 +256,22 @@ class ChatRepository {
       final updatedMessages = [...filteredMessages, newMessage];
       updatedMessages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
+      final bool isActive = _activeChatId == currentChat.id;
+      final int newUnreadCount = isActive
+          ? 0
+          : currentChat.unreadCount + (newMessage.isMe ? 0 : 1);
+
+      if (isActive && !newMessage.isMe) {
+        _sendReadReceipt(currentChat);
+      }
+
       final updatedChat = Chat(
         id: currentChat.id,
         name: currentChat.name,
         isGroup: currentChat.isGroup,
         participants: currentChat.participants,
         messages: updatedMessages,
-        unreadCount: currentChat.unreadCount + (newMessage.isMe ? 0 : 1),
+        unreadCount: newUnreadCount,
         eventLog: currentChat.eventLog,
       );
 
@@ -226,43 +279,38 @@ class ChatRepository {
       newChatList.removeAt(chatIndex);
       newChatList.insert(0, updatedChat);
 
-      _ref.read(chatListProvider.notifier).state = newChatList;
-      _saveChatsToLocal();
+      Future.microtask(() {
+        _ref.read(chatListProvider.notifier).state = newChatList;
+        _saveChatsToLocal();
+      });
     }
   }
 
   void _handleTypingIndicator(Map<String, dynamic> payload) {
-    // {user_id, username, group_id?, recipient_id?, is_typing}
+    // ... same as before
     final isTyping = payload['is_typing'] == true;
     final username = payload['username'] ?? 'Someone';
     final currentUser = _ref.read(userProvider);
 
-    // Ignore own typing events if echoed back
     if (payload['user_id'].toString() == currentUser?.id) return;
 
     String? chatId;
     if (payload['group_id'] != null) {
       chatId = payload['group_id'].toString();
     } else if (payload['recipient_id'] != null) {
-      // For private, the chat ID is the sender of the event (the other person)
       chatId = payload['user_id'].toString();
     }
 
     if (chatId == null) return;
 
-    // Update State
     final currentMap = _ref.read(typingStatusProvider);
-    // Create shallow copy of map
     final newMap = Map<String, Set<String>>.from(currentMap);
 
-    // Deep copy the specific set for this chat to avoid mutation
     final currentSet = newMap[chatId] ?? <String>{};
     final newSet = Set<String>.from(currentSet);
 
     if (isTyping) {
       newSet.add(username);
-
-      // Auto-clear safety timer (3.5s) in case we miss the "false" event
       _typingTimers[chatId]?.cancel();
       _typingTimers[chatId] = Timer(const Duration(milliseconds: 3500), () {
         _clearTyping(chatId!, username);
@@ -271,9 +319,10 @@ class ChatRepository {
       newSet.remove(username);
     }
 
-    // Assign new set back to new map
     newMap[chatId] = newSet;
-    _ref.read(typingStatusProvider.notifier).state = newMap;
+    Future.microtask(() {
+      _ref.read(typingStatusProvider.notifier).state = newMap;
+    });
   }
 
   void _clearTyping(String chatId, String username) {
@@ -281,7 +330,6 @@ class ChatRepository {
     if (currentMap.containsKey(chatId) && currentMap[chatId]!.contains(username)) {
       final newMap = Map<String, Set<String>>.from(currentMap);
 
-      // Deep copy set
       final newSet = Set<String>.from(newMap[chatId]!);
       newSet.remove(username);
       newMap[chatId] = newSet;
@@ -299,12 +347,49 @@ class ChatRepository {
   }
 
   // --- Handlers for Join/Leave ---
+  // ... (handleUserJoined, Left, Removed etc. basically same logic)
   void _handleUserJoined(Map<String, dynamic> payload) {
     _updateGroupMembership(payload, true);
   }
 
   void _handleUserLeft(Map<String, dynamic> payload) {
     _updateGroupMembership(payload, false);
+  }
+
+  void _handleUserRemoved(Map<String, dynamic> payload) {
+    final groupId = payload['group_id']?.toString();
+    final userId = payload['user_id']?.toString();
+    final username = payload['username'];
+
+    if (groupId == null || userId == null) return;
+
+    final chats = _ref.read(chatListProvider);
+    final chatIndex = chats.indexWhere((c) => c.id == groupId);
+
+    if (chatIndex != -1) {
+      final currentChat = chats[chatIndex];
+      final sysMsg = _createSystemMessage("$username was removed from the group");
+
+      List<User> newParticipants = List<User>.from(currentChat.participants);
+      newParticipants.removeWhere((u) => u.id == userId);
+
+      final updatedChat = Chat(
+        id: currentChat.id,
+        name: currentChat.name,
+        isGroup: currentChat.isGroup,
+        participants: newParticipants,
+        messages: [...currentChat.messages, sysMsg],
+        unreadCount: currentChat.unreadCount,
+        eventLog: currentChat.eventLog,
+      );
+
+      final newChatList = List<Chat>.from(chats);
+      newChatList[chatIndex] = updatedChat;
+      Future.microtask(() {
+        _ref.read(chatListProvider.notifier).state = newChatList;
+        _saveChatsToLocal();
+      });
+    }
   }
 
   void _updateGroupMembership(Map<String, dynamic> payload, bool isJoin) {
@@ -342,8 +427,10 @@ class ChatRepository {
 
       final newChatList = List<Chat>.from(chats);
       newChatList[chatIndex] = updatedChat;
-      _ref.read(chatListProvider.notifier).state = newChatList;
-      _saveChatsToLocal();
+      Future.microtask(() {
+        _ref.read(chatListProvider.notifier).state = newChatList;
+        _saveChatsToLocal();
+      });
     }
   }
 
@@ -360,6 +447,7 @@ class ChatRepository {
   }
 
   // --- Actions ---
+  // ... (login, logout, etc remain mostly same, just added microtask where update happens)
 
   Future<void> login(String username, String password) async {
     _ref.read(isLoadingProvider.notifier).state = true;
@@ -593,8 +681,11 @@ class ChatRepository {
 
         final newChatList = List<Chat>.from(chats);
         newChatList[chatIndex] = updatedChat;
-        _ref.read(chatListProvider.notifier).state = newChatList;
-        _saveChatsToLocal();
+
+        Future.microtask(() {
+          _ref.read(chatListProvider.notifier).state = newChatList;
+          _saveChatsToLocal();
+        });
       }
     } catch (e) {
       if (kDebugMode) print("Fetch messages error: $e");
@@ -624,8 +715,10 @@ class ChatRepository {
 
         final newChatList = List<Chat>.from(chats);
         newChatList[chatIndex] = updatedChat;
-        _ref.read(chatListProvider.notifier).state = newChatList;
-        _saveChatsToLocal();
+        Future.microtask(() {
+          _ref.read(chatListProvider.notifier).state = newChatList;
+          _saveChatsToLocal();
+        });
       }
     } catch (e) {
       if (kDebugMode) print("Fetch group members error: $e");
@@ -802,5 +895,24 @@ class ChatRepository {
     _saveChatsToLocal();
     _ws.unsubscribeFromGroup(chatId);
     _api.post('/groups/$chatId/leave/', {});
+  }
+
+  // --- Add/Remove Members ---
+
+  Future<void> addMemberToGroup(String groupId, String userId) async {
+    try {
+      await _api.post('/groups/$groupId/add_member/', {'user_id': userId});
+      fetchGroupMembers(groupId);
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<void> removeMemberFromGroup(String groupId, String userId) async {
+    try {
+      await _api.post('/groups/$groupId/remove_member/', {'user_id': userId});
+    } catch (e) {
+      rethrow;
+    }
   }
 }

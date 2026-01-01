@@ -28,12 +28,18 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   late String _chatId;
   Timer? _typingDebounce;
 
+  // Safe reference for dispose
+  late ChatRepository _repository;
+
   @override
   void initState() {
     super.initState();
     _chatId = widget.chat.id;
-    // Initial fetch to sync state
-    ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, true);
+    _repository = ref.read(chatRepositoryProvider);
+
+    _repository.enterChat(_chatId);
+    _repository.fetchMessagesForChat(_chatId, true);
+
     SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
   }
 
@@ -41,14 +47,18 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   void didUpdateWidget(GroupChatPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.chat.id != widget.chat.id) {
+      _repository.leaveChat(); // Leave old
       _chatId = widget.chat.id;
-      ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, true);
+      _repository.enterChat(_chatId); // Enter new
+      _repository.fetchMessagesForChat(_chatId, true);
       _messageController.clear();
     }
   }
 
   @override
   void dispose() {
+    // Use the captured reference instead of ref.read()
+    _repository.leaveChat();
     _typingDebounce?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
@@ -58,24 +68,26 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   void _onTextChanged(String text) {
     if (_typingDebounce?.isActive ?? false) _typingDebounce!.cancel();
 
-    // Send "is typing"
+    // It's safe to use ref.read here as this is a user interaction
     ref.read(chatRepositoryProvider).sendTyping(_chatId, true, true);
 
     _typingDebounce = Timer(const Duration(seconds: 2), () {
-      // Send "stop typing"
-      ref.read(chatRepositoryProvider).sendTyping(_chatId, true, false);
+      if (mounted) {
+        ref.read(chatRepositoryProvider).sendTyping(_chatId, true, false);
+      }
     });
   }
 
   void _sendMessage() {
     if (_messageController.text.trim().isNotEmpty) {
-      ref.read(chatRepositoryProvider).sendMessage(
+      final repo = ref.read(chatRepositoryProvider);
+      repo.sendMessage(
           _chatId,
           _messageController.text.trim(),
           true // isGroup
       );
       _messageController.clear();
-      ref.read(chatRepositoryProvider).sendTyping(_chatId, true, false); // Stop typing
+      repo.sendTyping(_chatId, true, false); // Stop typing immediately
       _scrollToBottom();
     }
   }
@@ -121,7 +133,6 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
     }
   }
 
-  // Consistent color generation for user avatars/names
   Color _getUserColor(String username) {
     final colors = [
       Colors.orange, Colors.purple, Colors.pink, Colors.teal,
@@ -141,7 +152,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
     final chatList = ref.watch(chatListProvider);
     final currentChat = chatList.firstWhere((c) => c.id == _chatId, orElse: () => widget.chat);
 
-    // Typing Indicators
+    // Listen for typing events
     final typingMap = ref.watch(typingStatusProvider);
     final typingUsers = typingMap[_chatId] ?? {};
     final typingText = typingUsers.isEmpty ? "" : "${typingUsers.join(', ')} typing...";
@@ -231,7 +242,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                     ),
                     child: TextField(
                       controller: _messageController,
-                      autofocus: isDesktop, // Auto-focus on desktop
+                      autofocus: isDesktop,
                       onChanged: _onTextChanged,
                       style: TextStyle(color: textColor),
                       decoration: InputDecoration(
@@ -240,7 +251,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                       ),
-                      onSubmitted: (_) => _sendMessage(), // Send on Enter
+                      onSubmitted: (_) => _sendMessage(),
                     ),
                   ),
                 ),
@@ -262,12 +273,9 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
 
   Widget _buildGroupMessageBubble(Message message, bool isDark) {
     final isMe = message.isMe;
-
-    // UI: Bubble Color Logic
     final bubbleColor = isMe
         ? (message.status == MessageStatus.failed ? Colors.red.shade700 : const Color(0xFF1A60FF))
         : (isDark ? const Color(0xFF2C2C2C) : Colors.white);
-
     final textColor = isMe ? Colors.white : (isDark ? Colors.white : Colors.black87);
     final timeColor = isMe ? Colors.white70 : Colors.grey;
     final senderColor = _getUserColor(message.senderName);
@@ -278,14 +286,11 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // Retry Button (Left of bubble for current user if failed)
           if (isMe && message.status == MessageStatus.failed)
             IconButton(
               icon: const Icon(Icons.refresh, color: Colors.red),
-              tooltip: "Retry Sending",
               onPressed: () => ref.read(chatRepositoryProvider).resendMessage(_chatId, message, true),
             ),
-
           ConstrainedBox(
             constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
             child: Container(
@@ -307,7 +312,6 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Sender Name (Only for others)
                   if (!isMe)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4.0),
@@ -316,8 +320,6 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                         style: TextStyle(fontWeight: FontWeight.bold, color: senderColor, fontSize: 13.sp),
                       ),
                     ),
-
-                  // Message Text and Metadata (Time/Tick)
                   Wrap(
                     alignment: WrapAlignment.end,
                     crossAxisAlignment: WrapCrossAlignment.end,
@@ -363,6 +365,7 @@ class _GroupInfoContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final textColor = Theme.of(context).colorScheme.onSurface;
     final repo = ref.read(chatRepositoryProvider);
     final currentUser = ref.watch(userProvider);
 

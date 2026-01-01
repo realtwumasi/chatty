@@ -28,12 +28,18 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   late String _chatId;
   Timer? _typingDebounce;
 
+  // Safe reference for dispose
+  late ChatRepository _repository;
+
   @override
   void initState() {
     super.initState();
     _chatId = widget.chat.id;
-    // Initial fetch, then rely on WS
-    ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, false);
+    _repository = ref.read(chatRepositoryProvider);
+
+    _repository.enterChat(_chatId);
+    _repository.fetchMessagesForChat(_chatId, false);
+
     SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
   }
 
@@ -41,14 +47,18 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   void didUpdateWidget(ChatPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.chat.id != widget.chat.id) {
+      _repository.leaveChat();
       _chatId = widget.chat.id;
-      ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, false);
+      _repository.enterChat(_chatId);
+      _repository.fetchMessagesForChat(_chatId, false);
       _messageController.clear();
     }
   }
 
   @override
   void dispose() {
+    // Use captured reference
+    _repository.leaveChat();
     _typingDebounce?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
@@ -58,24 +68,26 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   void _onTextChanged(String text) {
     if (_typingDebounce?.isActive ?? false) _typingDebounce!.cancel();
 
-    // Send "is typing"
+    // Safe to use ref.read for user interaction
     ref.read(chatRepositoryProvider).sendTyping(_chatId, false, true);
 
     _typingDebounce = Timer(const Duration(seconds: 2), () {
-      // Send "stop typing"
-      ref.read(chatRepositoryProvider).sendTyping(_chatId, false, false);
+      if (mounted) {
+        ref.read(chatRepositoryProvider).sendTyping(_chatId, false, false);
+      }
     });
   }
 
   void _sendMessage() {
     if (_messageController.text.trim().isNotEmpty) {
-      ref.read(chatRepositoryProvider).sendMessage(
+      final repo = ref.read(chatRepositoryProvider);
+      repo.sendMessage(
           _chatId,
           _messageController.text.trim(),
           false // isGroup = false
       );
       _messageController.clear();
-      ref.read(chatRepositoryProvider).sendTyping(_chatId, false, false); // Stop typing immediately
+      repo.sendTyping(_chatId, false, false);
       _scrollToBottom();
     }
   }
@@ -121,13 +133,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
     final textColor = Theme.of(context).colorScheme.onSurface;
     final inputColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
-    // Optimization: Use isDesktop from widget
     final isDesktop = widget.isDesktop;
 
     final chatList = ref.watch(chatListProvider);
     final currentChat = chatList.firstWhere((c) => c.id == _chatId, orElse: () => widget.chat);
 
-    // Listen for typing events
     final typingMap = ref.watch(typingStatusProvider);
     final typingUsers = typingMap[_chatId] ?? {};
     final isTyping = typingUsers.isNotEmpty;
@@ -170,7 +180,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         children: [
           Expanded(
             child: Scrollbar(
-              // Optimization: Scrollbar for desktop
               controller: _scrollController,
               thumbVisibility: isDesktop,
               child: ListView.builder(
@@ -199,7 +208,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     ),
                     child: TextField(
                       controller: _messageController,
-                      // Optimization: Autofocus for desktop usage
                       autofocus: isDesktop,
                       onChanged: _onTextChanged,
                       style: TextStyle(color: textColor),
