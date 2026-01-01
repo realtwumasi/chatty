@@ -21,29 +21,19 @@ class HomePage extends ConsumerStatefulWidget {
 
 class _HomePageState extends ConsumerState<HomePage> {
   Chat? _selectedChat;
-  Timer? _backgroundSyncTimer;
 
   @override
   void initState() {
     super.initState();
+    // Initial fetch to sync state
     ref.read(chatRepositoryProvider).fetchChats();
-    // Background sync every 30 seconds as fallback
-    _backgroundSyncTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      ref.read(chatRepositoryProvider).fetchChats();
-    });
-  }
-
-  @override
-  void dispose() {
-    _backgroundSyncTimer?.cancel();
-    super.dispose();
   }
 
   void _onChatSelected(Chat chat) {
     if (Responsive.isDesktop(context)) {
       setState(() {
         _selectedChat = chat;
-        chat.unreadCount = 0; // Mark read visually
+        chat.unreadCount = 0;
       });
     } else {
       if (chat.isGroup) {
@@ -94,17 +84,35 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final isConnected = ref.watch(wsConnectionProvider);
+
     return LayoutBuilder(
       builder: (context, constraints) {
+        final content = _buildMobileLayout(isConnected);
         if (constraints.maxWidth >= 900) {
-          return _buildDesktopLayout();
+          return _buildDesktopLayout(isConnected);
         }
-        return _buildMobileLayout();
+        return content;
       },
     );
   }
 
-  Widget _buildMobileLayout() {
+  Widget _buildConnectionBanner(bool isConnected) {
+    if (isConnected) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      color: Colors.redAccent,
+      padding: EdgeInsets.symmetric(vertical: 4.h),
+      child: Center(
+        child: Text(
+          "No Connection - Using Offline Data",
+          style: TextStyle(color: Colors.white, fontSize: 12.sp, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileLayout(bool isConnected) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
     final textColor = Theme.of(context).colorScheme.onSurface;
@@ -114,14 +122,21 @@ class _HomePageState extends ConsumerState<HomePage> {
       drawer: _buildDrawer(isDark, textColor),
       appBar: _buildAppBar(textColor, isDark, isDesktop: false),
       floatingActionButton: _buildFAB(),
-      body: RefreshIndicator(
-        onRefresh: _handleRefresh,
-        child: _buildChatList(),
+      body: Column(
+        children: [
+          _buildConnectionBanner(isConnected),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _handleRefresh,
+              child: _buildChatList(),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildDesktopLayout() {
+  Widget _buildDesktopLayout(bool isConnected) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
     final textColor = Theme.of(context).colorScheme.onSurface;
@@ -137,33 +152,38 @@ class _HomePageState extends ConsumerState<HomePage> {
 
     return Scaffold(
       backgroundColor: backgroundColor,
-      body: Row(
+      body: Column(
         children: [
-          SizedBox(
-            width: 380,
-            child: Column(
+          _buildConnectionBanner(isConnected),
+          Expanded(
+            child: Row(
               children: [
-                _buildAppBar(textColor, isDark, isDesktop: true),
-                Expanded(child: _buildChatList()),
-                Divider(height: 1, color: borderColor),
-                _buildCompactUserProfile(isDark, textColor),
+                SizedBox(
+                  width: 380,
+                  child: Column(
+                    children: [
+                      _buildAppBar(textColor, isDark, isDesktop: true),
+                      Expanded(child: _buildChatList()),
+                      Divider(height: 1, color: borderColor),
+                      _buildCompactUserProfile(isDark, textColor),
+                    ],
+                  ),
+                ),
+                VerticalDivider(width: 1, color: borderColor),
+                Expanded(
+                  child: _selectedChat != null
+                      ? (_selectedChat!.isGroup
+                      ? GroupChatPage(key: ValueKey(_selectedChat!.id), chat: _selectedChat!, isDesktop: true)
+                      : ChatPage(key: ValueKey(_selectedChat!.id), chat: _selectedChat!, isDesktop: true))
+                      : _buildEmptyDesktopState(isDark, textColor),
+                ),
               ],
             ),
-          ),
-          VerticalDivider(width: 1, color: borderColor),
-          Expanded(
-            child: _selectedChat != null
-                ? (_selectedChat!.isGroup
-                ? GroupChatPage(key: ValueKey(_selectedChat!.id), chat: _selectedChat!, isDesktop: true)
-                : ChatPage(key: ValueKey(_selectedChat!.id), chat: _selectedChat!, isDesktop: true))
-                : _buildEmptyDesktopState(isDark, textColor),
           ),
         ],
       ),
     );
   }
-
-  // ... (UI Helpers below remain same but ensuring no timer logic is hidden inside)
 
   Widget _buildEmptyDesktopState(bool isDark, Color textColor) {
     return Center(

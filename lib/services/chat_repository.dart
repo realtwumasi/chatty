@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:chatty/services/web_socket_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,7 +17,10 @@ final chatListProvider = StateProvider<List<Chat>>((ref) => []);
 final allUsersProvider = StateProvider<List<User>>((ref) => []);
 final isLoadingProvider = StateProvider<bool>((ref) => false);
 final themeProvider = StateProvider<bool>((ref) => false);
-final wsConnectionProvider = ValueNotifier<bool>(false);
+final wsConnectionProvider = StateProvider<bool>((ref) => false);
+
+// Map<ChatId, Set<Username>> - Tracks who is typing in which chat
+final typingStatusProvider = StateProvider<Map<String, Set<String>>>((ref) => <String, Set<String>>{});
 
 // --- Repository Logic ---
 
@@ -25,8 +29,12 @@ class ChatRepository {
   final ApiService _api = ApiService();
   final WebSocketService _ws = WebSocketService();
 
+  // Keep track of timers to clear typing status automatically
+  final Map<String, Timer> _typingTimers = {};
+
   ChatRepository(this._ref) {
     _ws.isConnected.addListener(() {
+      _ref.read(wsConnectionProvider.notifier).state = _ws.isConnected.value;
       if (kDebugMode) print("WS Status Changed: ${_ws.isConnected.value}");
     });
   }
@@ -135,6 +143,10 @@ class ChatRepository {
       case 'user_left':
         _handleUserLeft(payload);
         break;
+
+      case 'typing_indicator':
+        _handleTypingIndicator(payload);
+        break;
     }
   }
 
@@ -186,8 +198,10 @@ class ChatRepository {
 
     if (chatIndex != -1) {
       final currentChat = chats[chatIndex];
+      // Dedupe
       if (currentChat.messages.any((m) => m.id == newMessage.id)) return;
 
+      // Filter out temp 'sending' messages if they match content
       final filteredMessages = currentChat.messages.where((m) {
         if (m.isMe && m.status == MessageStatus.sending && m.text == newMessage.text) {
           return false;
@@ -217,6 +231,74 @@ class ChatRepository {
     }
   }
 
+  void _handleTypingIndicator(Map<String, dynamic> payload) {
+    // {user_id, username, group_id?, recipient_id?, is_typing}
+    final isTyping = payload['is_typing'] == true;
+    final username = payload['username'] ?? 'Someone';
+    final currentUser = _ref.read(userProvider);
+
+    // Ignore own typing events if echoed back
+    if (payload['user_id'].toString() == currentUser?.id) return;
+
+    String? chatId;
+    if (payload['group_id'] != null) {
+      chatId = payload['group_id'].toString();
+    } else if (payload['recipient_id'] != null) {
+      // For private, the chat ID is the sender of the event (the other person)
+      chatId = payload['user_id'].toString();
+    }
+
+    if (chatId == null) return;
+
+    // Update State
+    final currentMap = _ref.read(typingStatusProvider);
+    // Create shallow copy of map
+    final newMap = Map<String, Set<String>>.from(currentMap);
+
+    // Deep copy the specific set for this chat to avoid mutation
+    final currentSet = newMap[chatId] ?? <String>{};
+    final newSet = Set<String>.from(currentSet);
+
+    if (isTyping) {
+      newSet.add(username);
+
+      // Auto-clear safety timer (3.5s) in case we miss the "false" event
+      _typingTimers[chatId]?.cancel();
+      _typingTimers[chatId] = Timer(const Duration(milliseconds: 3500), () {
+        _clearTyping(chatId!, username);
+      });
+    } else {
+      newSet.remove(username);
+    }
+
+    // Assign new set back to new map
+    newMap[chatId] = newSet;
+    _ref.read(typingStatusProvider.notifier).state = newMap;
+  }
+
+  void _clearTyping(String chatId, String username) {
+    final currentMap = _ref.read(typingStatusProvider);
+    if (currentMap.containsKey(chatId) && currentMap[chatId]!.contains(username)) {
+      final newMap = Map<String, Set<String>>.from(currentMap);
+
+      // Deep copy set
+      final newSet = Set<String>.from(newMap[chatId]!);
+      newSet.remove(username);
+      newMap[chatId] = newSet;
+
+      _ref.read(typingStatusProvider.notifier).state = newMap;
+    }
+  }
+
+  void sendTyping(String chatId, bool isGroup, bool isTyping) {
+    if (isGroup) {
+      _ws.sendTyping(chatId, null, isTyping);
+    } else {
+      _ws.sendTyping(null, chatId, isTyping);
+    }
+  }
+
+  // --- Handlers for Join/Leave ---
   void _handleUserJoined(Map<String, dynamic> payload) {
     _updateGroupMembership(payload, true);
   }
@@ -359,24 +441,19 @@ class ChatRepository {
 
   Future<void> fetchChats() async {
     try {
-      // 1. Fetch Groups
       final response = await _api.get('/groups/');
       final List groupData = (response is Map && response.containsKey('results')) ? response['results'] : [];
       final fetchedGroups = groupData.map((e) => Chat.fromGroupJson(e)).toList();
 
-      // 2. Fetch Recent Private Chats (reconstruct from message history)
       final privateChats = await _fetchPrivateChatsFromHistory();
 
-      // 3. Merge Strategies
       final currentChats = _ref.read(chatListProvider);
       final mergedMap = <String, Chat>{};
 
-      // Add reconstructed private chats
       for (var chat in privateChats) {
         mergedMap[chat.id] = chat;
       }
 
-      // Add/Update groups
       for (var group in fetchedGroups) {
         final local = currentChats.where((c) => c.id == group.id).firstOrNull;
         if (local != null) {
@@ -392,11 +469,9 @@ class ChatRepository {
         } else {
           mergedMap[group.id] = group;
         }
-
         if (_ws.isConnected.value) _ws.subscribeToGroup(group.id);
       }
 
-      // Preserve local-only chats
       for (var local in currentChats) {
         if (!mergedMap.containsKey(local.id)) {
           mergedMap[local.id] = local;
@@ -410,7 +485,6 @@ class ChatRepository {
     }
   }
 
-  // New Method to restore DM list
   Future<List<Chat>> _fetchPrivateChatsFromHistory() async {
     try {
       final response = await _api.get('/messages/', params: {

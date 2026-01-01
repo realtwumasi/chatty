@@ -127,4 +127,12 @@ class WebSocketService {
   void unsubscribeFromGroup(String groupId) {
     send('unsubscribe_group', {'group_id': groupId});
   }
+
+  void sendTyping(String? groupId, String? recipientId, bool isTyping) {
+    send('typing_indicator', {
+      if (groupId != null) 'group_id': groupId,
+      if (recipientId != null) 'recipient_id': recipientId,
+      'is_typing': isTyping,
+    });
+  }
 }

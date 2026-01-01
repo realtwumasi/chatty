@@ -26,12 +26,13 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   late String _chatId;
+  Timer? _typingDebounce;
 
   @override
   void initState() {
     super.initState();
     _chatId = widget.chat.id;
-    // Initial fetch to sync state
+    // Initial fetch, then rely on WS
     ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, true);
     SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
   }
@@ -48,9 +49,22 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
 
   @override
   void dispose() {
+    _typingDebounce?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onTextChanged(String text) {
+    if (_typingDebounce?.isActive ?? false) _typingDebounce!.cancel();
+
+    // Send "is typing"
+    ref.read(chatRepositoryProvider).sendTyping(_chatId, true, true);
+
+    _typingDebounce = Timer(const Duration(seconds: 2), () {
+      // Send "stop typing"
+      ref.read(chatRepositoryProvider).sendTyping(_chatId, true, false);
+    });
   }
 
   void _sendMessage() {
@@ -61,6 +75,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
           true // isGroup
       );
       _messageController.clear();
+      ref.read(chatRepositoryProvider).sendTyping(_chatId, true, false); // Stop typing immediately
       _scrollToBottom();
     }
   }
@@ -125,6 +140,11 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
     final chatList = ref.watch(chatListProvider);
     final currentChat = chatList.firstWhere((c) => c.id == _chatId, orElse: () => widget.chat);
 
+    // Listen for typing events
+    final typingMap = ref.watch(typingStatusProvider);
+    final typingUsers = typingMap[_chatId] ?? {};
+    final typingText = typingUsers.isEmpty ? "" : "${typingUsers.join(', ')} typing...";
+
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
@@ -148,10 +168,13 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(currentChat.name, style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 16)),
-                  Text(
-                    "${currentChat.participants.length} members",
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
+                  if (typingText.isNotEmpty)
+                    Text(typingText, style: TextStyle(color: const Color(0xFF1A60FF), fontSize: 12, fontStyle: FontStyle.italic))
+                  else
+                    Text(
+                      "${currentChat.participants.length} members",
+                      style: const TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
                 ],
               ),
             ],
@@ -203,6 +226,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                     ),
                     child: TextField(
                       controller: _messageController,
+                      onChanged: _onTextChanged,
                       style: TextStyle(color: textColor),
                       decoration: InputDecoration(
                         hintText: "Message ${currentChat.name}...",

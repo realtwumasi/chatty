@@ -26,11 +26,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   late String _chatId;
+  Timer? _typingDebounce;
 
   @override
   void initState() {
     super.initState();
     _chatId = widget.chat.id;
+    // Initial fetch, then rely on WS
     ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, false);
     SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
   }
@@ -47,9 +49,22 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   @override
   void dispose() {
+    _typingDebounce?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onTextChanged(String text) {
+    if (_typingDebounce?.isActive ?? false) _typingDebounce!.cancel();
+
+    // Send "is typing"
+    ref.read(chatRepositoryProvider).sendTyping(_chatId, false, true);
+
+    _typingDebounce = Timer(const Duration(seconds: 2), () {
+      // Send "stop typing"
+      ref.read(chatRepositoryProvider).sendTyping(_chatId, false, false);
+    });
   }
 
   void _sendMessage() {
@@ -60,6 +75,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           false // isGroup = false
       );
       _messageController.clear();
+      ref.read(chatRepositoryProvider).sendTyping(_chatId, false, false); // Stop typing immediately
       _scrollToBottom();
     }
   }
@@ -110,6 +126,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final chatList = ref.watch(chatListProvider);
     final currentChat = chatList.firstWhere((c) => c.id == _chatId, orElse: () => widget.chat);
 
+    // Listen for typing events
+    final typingMap = ref.watch(typingStatusProvider);
+    final typingUsers = typingMap[_chatId] ?? {};
+    final isTyping = typingUsers.isNotEmpty;
+
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
@@ -129,7 +150,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 child: Text(currentChat.name.isNotEmpty ? currentChat.name[0] : '?', style: const TextStyle(color: Colors.white)),
               ),
               const SizedBox(width: 10),
-              Text(currentChat.name, style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: 16)),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(currentChat.name, style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: 16)),
+                  if (isTyping)
+                    Text("typing...", style: TextStyle(color: const Color(0xFF1A60FF), fontSize: 12, fontWeight: FontWeight.bold)),
+                ],
+              ),
             ],
           ),
         ),
@@ -165,6 +193,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     ),
                     child: TextField(
                       controller: _messageController,
+                      onChanged: _onTextChanged,
                       style: TextStyle(color: textColor),
                       decoration: const InputDecoration(
                         hintText: "Type a message...",
