@@ -26,6 +26,7 @@ class ChatRepository {
 
   static const String _keyUser = 'current_user';
   static const String _keyTheme = 'is_dark_mode';
+  static const String _keyChats = 'local_chats';
 
   // --- Startup ---
 
@@ -45,6 +46,19 @@ class ChatRepository {
           _ref.read(userProvider.notifier).state = user;
         } catch (_) {}
       }
+
+      // Load Local Chats (Offline Access)
+      final chatsJson = prefs.getString(_keyChats);
+      if (chatsJson != null) {
+        try {
+          final List<dynamic> decoded = jsonDecode(chatsJson);
+          final localChats = decoded.map((e) => Chat.fromLocalJson(e)).toList();
+          _ref.read(chatListProvider.notifier).state = localChats;
+        } catch (e) {
+          if (kDebugMode) print("Error loading local chats: $e");
+        }
+      }
+
     } catch (e) {
       if (kDebugMode) print("Storage Warning: Failed to init storage: $e");
     }
@@ -56,6 +70,7 @@ class ChatRepository {
       return false;
     }
 
+    // Attempt to sync online data
     try {
       await Future.wait([
         fetchUsers(),
@@ -67,8 +82,23 @@ class ChatRepository {
         await logout();
         return false;
       }
+      // Return true if we have a user (offline mode enabled)
       return currentUser != null;
     }
+  }
+
+  // --- Helper: Save to Local Storage ---
+  void _saveChatsToLocal() {
+    final chats = _ref.read(chatListProvider);
+    // Debounce or run in background could be optimization, for now run directly
+    SharedPreferences.getInstance().then((prefs) {
+      try {
+        final jsonStr = jsonEncode(chats.map((c) => c.toJson()).toList());
+        prefs.setString(_keyChats, jsonStr);
+      } catch (e) {
+        if (kDebugMode) print("Error saving local chats: $e");
+      }
+    });
   }
 
   // --- Auth ---
@@ -117,6 +147,7 @@ class ChatRepository {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_keyUser);
+      await prefs.remove(_keyChats); // Clear chats on logout
     } catch (_) {}
   }
 
@@ -176,8 +207,41 @@ class ChatRepository {
           ? response['results']
           : [];
 
-      final newChats = groupData.map((e) => Chat.fromGroupJson(e)).toList();
-      _ref.read(chatListProvider.notifier).state = newChats;
+      final fetchedChats = groupData.map((e) => Chat.fromGroupJson(e)).toList();
+
+      // Merge with local data to preserve messages and participants we might have cached
+      final currentChats = _ref.read(chatListProvider);
+      final mergedChats = <Chat>[];
+
+      for (var fetched in fetchedChats) {
+        final existing = currentChats.where((c) => c.id == fetched.id).firstOrNull;
+        if (existing != null) {
+          // Keep messages and participants from local if available
+          mergedChats.add(Chat(
+            id: fetched.id,
+            name: fetched.name, // Name might have changed on server
+            isGroup: fetched.isGroup,
+            messages: existing.messages,
+            participants: existing.participants.isEmpty ? fetched.participants : existing.participants,
+            unreadCount: existing.unreadCount,
+            eventLog: existing.eventLog,
+          ));
+        } else {
+          mergedChats.add(fetched);
+        }
+      }
+
+      // Also keep private chats that might not be in the /groups/ endpoint if it only returns groups
+      // (Depending on API, usually private chats are implicit. If /groups/ returns only groups,
+      // we need to keep our local private chats)
+      for (var local in currentChats) {
+        if (!local.isGroup && !mergedChats.any((c) => c.id == local.id)) {
+          mergedChats.add(local);
+        }
+      }
+
+      _ref.read(chatListProvider.notifier).state = mergedChats;
+      _saveChatsToLocal(); // Save
     } catch (e) {
       if (kDebugMode) print("Fetch chats error: $e");
     }
@@ -185,7 +249,6 @@ class ChatRepository {
 
   Future<void> fetchMessagesForChat(String chatId, bool isGroup) async {
     try {
-      // 1. Fetch group members if it's a group (Detects Joins/Leaves)
       if (isGroup) {
         fetchGroupMembers(chatId).catchError((e){});
       }
@@ -200,7 +263,6 @@ class ChatRepository {
           ? response['results']
           : [];
 
-      // Update State
       final currentUser = _ref.read(userProvider);
       if (currentUser == null) return;
 
@@ -213,7 +275,7 @@ class ChatRepository {
         final newMsgs = data.map((e) => Message.fromJson(e, currentUser.id)).toList();
         newMsgs.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
-        // Preserve temporary/failed messages that haven't been synced yet
+        // Preserve temporary/failed messages
         final currentMessages = chats[chatIndex].messages;
         final unsyncedMessages = currentMessages.where((m) =>
         m.status == MessageStatus.sending || m.status == MessageStatus.failed
@@ -221,13 +283,11 @@ class ChatRepository {
 
         final finalMessages = [...newMsgs];
         for (var m in unsyncedMessages) {
-          // If message is not already in the fetched list (deduplication by content/time approximation)
           if (!finalMessages.any((fm) => fm.text == m.text && fm.timestamp.difference(m.timestamp).inSeconds.abs() < 2)) {
             finalMessages.add(m);
           }
         }
 
-        // Ensure system messages are preserved if generated locally
         final systemMessages = currentMessages.where((m) => m.isSystem).toList();
         for (var sysMsg in systemMessages) {
           if (!finalMessages.any((m) => m.id == sysMsg.id)) {
@@ -249,6 +309,7 @@ class ChatRepository {
         final newChatList = List<Chat>.from(chats);
         newChatList[chatIndex] = updatedChat;
         _ref.read(chatListProvider.notifier).state = newChatList;
+        _saveChatsToLocal(); // Save after messages update
       }
     } catch (e) {
       if (kDebugMode) print("Fetch messages error: $e");
@@ -271,7 +332,6 @@ class ChatRepository {
         final newMemberIds = newMembers.map((u) => u.id).toSet();
         final List<Message> newSystemMessages = [];
 
-        // Only generate system messages if we already had members (prevent spam on initial load)
         if (oldMemberIds.isNotEmpty) {
           for (var user in newMembers) {
             if (!oldMemberIds.contains(user.id)) {
@@ -285,9 +345,9 @@ class ChatRepository {
           }
         }
 
-        // Only update if there are changes to avoid unnecessary rebuilds
         if (oldMemberIds.length != newMemberIds.length || newSystemMessages.isNotEmpty) {
           final updatedMessages = List<Message>.from(currentChat.messages)..addAll(newSystemMessages);
+          updatedMessages.sort((a, b) => a.timestamp.compareTo(b.timestamp)); // Ensure order
 
           final updatedChat = Chat(
             id: currentChat.id,
@@ -302,6 +362,7 @@ class ChatRepository {
           final newChatList = List<Chat>.from(chats);
           newChatList[chatIndex] = updatedChat;
           _ref.read(chatListProvider.notifier).state = newChatList;
+          _saveChatsToLocal(); // Save after members update
         }
       }
     } catch (e) {
@@ -341,12 +402,12 @@ class ChatRepository {
       );
 
       _ref.read(chatListProvider.notifier).state = [newChat, ...chats];
+      _saveChatsToLocal(); // Save new chat
       return newChat;
     }
   }
 
   Future<void> resendMessage(String chatId, Message message, bool isGroup) async {
-    // Remove the failed message first to avoid duplicates when we re-add it as sending
     final chats = _ref.read(chatListProvider);
     final chatIndex = chats.indexWhere((c) => isGroup ? c.id == chatId : c.participants.any((p) => p.id == chatId));
 
@@ -364,9 +425,9 @@ class ChatRepository {
       final newChatList = List<Chat>.from(chats);
       newChatList[chatIndex] = updatedChat;
       _ref.read(chatListProvider.notifier).state = newChatList;
+      _saveChatsToLocal(); // Save removal
     }
 
-    // Call send message with original content
     await sendMessage(chatId, message.text, isGroup);
   }
 
@@ -378,11 +439,9 @@ class ChatRepository {
     final body = {
       'content': content,
       'message_type': isGroup ? 'group' : 'private',
-      // Requirement 3: Only the intended recipient receives the private message.
       if (isGroup) 'group': targetId else 'recipient_id': targetId,
     };
 
-    // Optimistic Update
     final chats = _ref.read(chatListProvider);
     final chatIndex = chats.indexWhere((c) => isGroup
         ? c.id == targetId
@@ -412,15 +471,15 @@ class ChatRepository {
       final newChatList = List<Chat>.from(chats);
       newChatList[chatIndex] = updatedChat;
       _ref.read(chatListProvider.notifier).state = newChatList;
+      _saveChatsToLocal(); // Save optimistic message
     }
 
     try {
       await _api.post(endpoint, body);
       await fetchMessagesForChat(targetId, isGroup);
     } catch (e) {
-      // Mark as failed in state
       if (chatIndex != -1) {
-        final currentChats = _ref.read(chatListProvider); // Read fresh state
+        final currentChats = _ref.read(chatListProvider);
         final msgs = List<Message>.from(currentChats[chatIndex].messages);
         if (msgs.isNotEmpty && msgs.last.status == MessageStatus.sending) {
           msgs.last.status = MessageStatus.failed;
@@ -437,6 +496,7 @@ class ChatRepository {
           final newChatList = List<Chat>.from(currentChats);
           newChatList[chatIndex] = failedChat;
           _ref.read(chatListProvider.notifier).state = newChatList;
+          _saveChatsToLocal(); // Save failed status
         }
       }
       rethrow;
@@ -458,6 +518,7 @@ class ChatRepository {
 
       final currentChats = _ref.read(chatListProvider);
       _ref.read(chatListProvider.notifier).state = [newChat, ...currentChats];
+      _saveChatsToLocal(); // Save new group
 
       return newChat;
     } catch (e) {
@@ -479,6 +540,7 @@ class ChatRepository {
     final chats = _ref.read(chatListProvider);
     final newChats = chats.where((c) => c.id != chatId).toList();
     _ref.read(chatListProvider.notifier).state = newChats;
+    _saveChatsToLocal(); // Save state after leaving
     _api.post('/groups/$chatId/leave/', {});
   }
 }

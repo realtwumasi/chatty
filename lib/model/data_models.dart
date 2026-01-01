@@ -16,7 +16,6 @@ class User {
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
       id: json['id']?.toString() ?? '',
-      // API Spec: 'username' is the display name. Fallback to email.
       name: json['username'] ?? json['email'] ?? 'Unknown',
       email: json['email'] ?? '',
       isOnline: false,
@@ -62,7 +61,6 @@ class Message {
   });
 
   factory Message.fromJson(Map<String, dynamic> json, String currentUserId) {
-    // API Spec: 'sender' is a full User object reference
     final senderData = json['sender'] is Map ? json['sender'] : {};
     final senderId = senderData['id']?.toString() ?? '';
     final senderName = senderData['username'] ?? 'Unknown';
@@ -72,10 +70,36 @@ class Message {
       senderId: senderId,
       senderName: senderName,
       text: json['content'] ?? '',
-      // API Spec: 'created_at'
       timestamp: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
       isMe: senderId == currentUserId,
       status: MessageStatus.sent,
+    );
+  }
+
+  // For Local Storage
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'senderId': senderId,
+      'senderName': senderName,
+      'text': text,
+      'timestamp': timestamp.toIso8601String(),
+      'isMe': isMe,
+      'isSystem': isSystem,
+      'status': status.index,
+    };
+  }
+
+  factory Message.fromLocalJson(Map<String, dynamic> json) {
+    return Message(
+      id: json['id'],
+      senderId: json['senderId'],
+      senderName: json['senderName'],
+      text: json['text'],
+      timestamp: DateTime.parse(json['timestamp']),
+      isMe: json['isMe'],
+      isSystem: json['isSystem'] ?? false,
+      status: MessageStatus.values[json['status'] ?? 1],
     );
   }
 
@@ -121,7 +145,35 @@ class Chat {
     );
   }
 
-  // Optimization: Cached-like getters for UI
+  // For Local Storage
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'isGroup': isGroup,
+      'messages': messages.map((m) => m.toJson()).toList(),
+      'participants': participants.map((u) => u.toJson()).toList(),
+      'unreadCount': unreadCount,
+    };
+  }
+
+  factory Chat.fromLocalJson(Map<String, dynamic> json) {
+    return Chat(
+      id: json['id'],
+      name: json['name'],
+      isGroup: json['isGroup'],
+      messages: (json['messages'] as List?)
+          ?.map((m) => Message.fromLocalJson(m))
+          .toList() ??
+          [],
+      participants: (json['participants'] as List?)
+          ?.map((u) => User.fromJson(u))
+          .toList() ??
+          [],
+      unreadCount: json['unreadCount'] ?? 0,
+    );
+  }
+
   String get lastMessagePreview {
     if (messages.isEmpty) return "No messages yet";
     return messages.last.text;
@@ -133,7 +185,6 @@ class Chat {
     return "${last.hour}:${last.minute.toString().padLeft(2, '0')}";
   }
 
-  // Optimization: Equality check to prevent unnecessary rebuilds
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
