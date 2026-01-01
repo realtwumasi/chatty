@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,25 +19,12 @@ class HomePage extends ConsumerStatefulWidget {
 
 class _HomePageState extends ConsumerState<HomePage> {
   Chat? _selectedChat;
-  Timer? _chatListPollingTimer;
 
   @override
   void initState() {
     super.initState();
-    // Initial fetch
+    // Initial fetch to sync state, then WS takes over
     ref.read(chatRepositoryProvider).fetchChats();
-
-    // Requirement 4: Distributed Operation
-    // Poll for new groups/chats created by other nodes every 10 seconds
-    _chatListPollingTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-      ref.read(chatRepositoryProvider).fetchChats();
-    });
-  }
-
-  @override
-  void dispose() {
-    _chatListPollingTimer?.cancel();
-    super.dispose();
   }
 
   void _onChatSelected(Chat chat) {
@@ -115,7 +101,6 @@ class _HomePageState extends ConsumerState<HomePage> {
     final textColor = Theme.of(context).colorScheme.onSurface;
     final borderColor = isDark ? Colors.grey[800]! : Colors.grey[300]!;
 
-    // Reactive update for selected chat in split view
     final chatList = ref.watch(chatListProvider);
     if (_selectedChat != null) {
       final updated = chatList.where((c) => c.id == _selectedChat!.id).firstOrNull;

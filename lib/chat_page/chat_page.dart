@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,28 +24,16 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   late String _chatId;
-  Timer? _pollingTimer;
 
   @override
   void initState() {
     super.initState();
     _chatId = widget.chat.id;
 
-    // Fetch immediately
-    _refreshMessages();
-
-    // Requirement 2: Group Communication - All online members receive message
-    // Since we don't have WebSockets, we poll every 3 seconds to simulate real-time updates
-    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      _refreshMessages();
-    });
+    // Initial fetch to ensure up-to-date state (e.g. read status, missing messages)
+    ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, widget.chat.isGroup);
 
     SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
-  }
-
-  void _refreshMessages() {
-    // This fetches messages AND updates group members (detects joins/leaves)
-    ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, widget.chat.isGroup);
   }
 
   @override
@@ -54,14 +41,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.chat.id != widget.chat.id) {
       _chatId = widget.chat.id;
-      _refreshMessages();
+      ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, widget.chat.isGroup);
       _messageController.clear();
     }
   }
 
   @override
   void dispose() {
-    _pollingTimer?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -186,7 +172,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final inputColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
     final isDesktop = Responsive.isDesktop(context);
 
-    // Reactive State
     final chatList = ref.watch(chatListProvider);
     final currentChat = chatList.firstWhere(
             (c) => c.id == _chatId,
@@ -410,7 +395,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 SizedBox(width: 4.w),
                 if (message.status == MessageStatus.failed)
                   GestureDetector(
-                    // Requirement 5: Reliability - Retry message delivery
                     onTap: () {
                       ref.read(chatRepositoryProvider).resendMessage(_chatId, message, widget.chat.isGroup);
                     },
@@ -483,7 +467,6 @@ class _GroupInfoContent extends ConsumerWidget {
                     ],
                   ),
                   title: Text(user.name + (isMe ? " (You)" : ""), style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16))),
-                  // Requirement 3: Direct Private Message from Group
                   trailing: !isMe ? IconButton(
                     icon: const Icon(Icons.message, color: Color(0xFF1A60FF)),
                     onPressed: () async {
