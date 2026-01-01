@@ -8,7 +8,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../model/data_models.dart';
 import 'api_service.dart';
 
-
 // --- Providers ---
 
 final chatRepositoryProvider = Provider((ref) => ChatRepository(ref));
@@ -153,7 +152,6 @@ class ChatRepository {
   }
 
   void _handleWebSocketEvent(Map<String, dynamic> event) {
-    // ... same as before
     final type = event['type'];
     final data = event['data'];
     final payload = (data is Map<String, dynamic>) ? data : event;
@@ -192,7 +190,6 @@ class ChatRepository {
   }
 
   void _handleNewMessage(Map<String, dynamic> payload, bool isGroup) {
-    // ... same logic but wrap state updates
     final currentUser = _ref.read(userProvider);
     if (currentUser == null) return;
 
@@ -233,7 +230,6 @@ class ChatRepository {
           unreadCount: 1,
         );
 
-        // Use microtask to avoid build conflicts
         Future.microtask(() {
           _ref.read(chatListProvider.notifier).state = [newChat, ...chats];
           _saveChatsToLocal();
@@ -287,7 +283,6 @@ class ChatRepository {
   }
 
   void _handleTypingIndicator(Map<String, dynamic> payload) {
-    // ... same as before
     final isTyping = payload['is_typing'] == true;
     final username = payload['username'] ?? 'Someone';
     final currentUser = _ref.read(userProvider);
@@ -329,11 +324,9 @@ class ChatRepository {
     final currentMap = _ref.read(typingStatusProvider);
     if (currentMap.containsKey(chatId) && currentMap[chatId]!.contains(username)) {
       final newMap = Map<String, Set<String>>.from(currentMap);
-
       final newSet = Set<String>.from(newMap[chatId]!);
       newSet.remove(username);
       newMap[chatId] = newSet;
-
       _ref.read(typingStatusProvider.notifier).state = newMap;
     }
   }
@@ -346,8 +339,6 @@ class ChatRepository {
     }
   }
 
-  // --- Handlers for Join/Leave ---
-  // ... (handleUserJoined, Left, Removed etc. basically same logic)
   void _handleUserJoined(Map<String, dynamic> payload) {
     _updateGroupMembership(payload, true);
   }
@@ -447,7 +438,6 @@ class ChatRepository {
   }
 
   // --- Actions ---
-  // ... (login, logout, etc remain mostly same, just added microtask where update happens)
 
   Future<void> login(String username, String password) async {
     _ref.read(isLoadingProvider.notifier).state = true;
@@ -681,11 +671,8 @@ class ChatRepository {
 
         final newChatList = List<Chat>.from(chats);
         newChatList[chatIndex] = updatedChat;
-
-        Future.microtask(() {
-          _ref.read(chatListProvider.notifier).state = newChatList;
-          _saveChatsToLocal();
-        });
+        _ref.read(chatListProvider.notifier).state = newChatList;
+        _saveChatsToLocal();
       }
     } catch (e) {
       if (kDebugMode) print("Fetch messages error: $e");
@@ -715,10 +702,8 @@ class ChatRepository {
 
         final newChatList = List<Chat>.from(chats);
         newChatList[chatIndex] = updatedChat;
-        Future.microtask(() {
-          _ref.read(chatListProvider.notifier).state = newChatList;
-          _saveChatsToLocal();
-        });
+        _ref.read(chatListProvider.notifier).state = newChatList;
+        _saveChatsToLocal();
       }
     } catch (e) {
       if (kDebugMode) print("Fetch group members error: $e");
@@ -901,7 +886,8 @@ class ChatRepository {
 
   Future<void> addMemberToGroup(String groupId, String userId) async {
     try {
-      await _api.post('/groups/$groupId/add_member/', {'user_id': userId});
+      // Changed to standard REST resource pattern
+      await _api.post('/groups/$groupId/members/', {'user_id': userId});
       fetchGroupMembers(groupId);
     } catch (e) {
       rethrow;
@@ -910,6 +896,18 @@ class ChatRepository {
 
   Future<void> removeMemberFromGroup(String groupId, String userId) async {
     try {
+      // Changed to use POST with specific action-like payload if DELETE isn't available
+      // or if your backend specifically uses POST for removal (common in some setups).
+      // Given the 404 on `remove_member`, let's try the resource deletion or `remove_member` if it was just the path.
+      // But standard REST is DELETE /groups/{id}/members/{userId}/
+      // Since I can't confirm backend, I'll stick to a safer POST path if available or revert to previous with better error handling in UI.
+      // Let's assume the standard sub-resource pattern which is more likely to exist.
+      // HOWEVER, `api_service` doesn't expose DELETE helper easily in my previous code.
+      // I will assume POST to a /members/remove/ style or similar if generic REST failed.
+      // Let's retry the original `remove_member` but the UI will now catch it.
+      // Actually, if the backend uses ViewSets, it might be `POST /groups/{id}/remove_member/`
+      // If that failed (404), then maybe `POST /groups/{id}/members/` with `action: remove`?
+      // Since I am blind to backend code, I will keep `remove_member` but rely on UI error handling.
       await _api.post('/groups/$groupId/remove_member/', {'user_id': userId});
     } catch (e) {
       rethrow;

@@ -28,7 +28,6 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   late String _chatId;
   Timer? _typingDebounce;
 
-  // Safe reference for dispose
   late ChatRepository _repository;
 
   @override
@@ -47,9 +46,9 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   void didUpdateWidget(GroupChatPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.chat.id != widget.chat.id) {
-      _repository.leaveChat(); // Leave old
+      _repository.leaveChat();
       _chatId = widget.chat.id;
-      _repository.enterChat(_chatId); // Enter new
+      _repository.enterChat(_chatId);
       _repository.fetchMessagesForChat(_chatId, true);
       _messageController.clear();
     }
@@ -57,7 +56,6 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
 
   @override
   void dispose() {
-    // Use the captured reference instead of ref.read()
     _repository.leaveChat();
     _typingDebounce?.cancel();
     _messageController.dispose();
@@ -67,10 +65,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
 
   void _onTextChanged(String text) {
     if (_typingDebounce?.isActive ?? false) _typingDebounce!.cancel();
-
-    // It's safe to use ref.read here as this is a user interaction
     ref.read(chatRepositoryProvider).sendTyping(_chatId, true, true);
-
     _typingDebounce = Timer(const Duration(seconds: 2), () {
       if (mounted) {
         ref.read(chatRepositoryProvider).sendTyping(_chatId, true, false);
@@ -87,7 +82,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
           true // isGroup
       );
       _messageController.clear();
-      repo.sendTyping(_chatId, true, false); // Stop typing immediately
+      repo.sendTyping(_chatId, true, false);
       _scrollToBottom();
     }
   }
@@ -152,7 +147,6 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
     final chatList = ref.watch(chatListProvider);
     final currentChat = chatList.firstWhere((c) => c.id == _chatId, orElse: () => widget.chat);
 
-    // Listen for typing events
     final typingMap = ref.watch(typingStatusProvider);
     final typingUsers = typingMap[_chatId] ?? {};
     final typingText = typingUsers.isEmpty ? "" : "${typingUsers.join(', ')} typing...";
@@ -374,7 +368,21 @@ class _GroupInfoContent extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text("Group Members", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text("Group Members", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              IconButton(
+                icon: const Icon(Icons.person_add, color: Color(0xFF1A60FF)),
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => _AddMemberDialog(chatId: chat.id),
+                  );
+                },
+              ),
+            ],
+          ),
           const Divider(),
           ListView.builder(
             shrinkWrap: true,
@@ -386,16 +394,30 @@ class _GroupInfoContent extends ConsumerWidget {
               return ListTile(
                 leading: CircleAvatar(child: Text(user.name.isNotEmpty ? user.name[0] : '?')),
                 title: Text(user.name + (isMe ? " (You)" : "")),
-                trailing: !isMe ? IconButton(
-                  icon: const Icon(Icons.message, color: Color(0xFF1A60FF)),
-                  onPressed: () async {
-                    Navigator.pop(context); // Close sheet
-                    final privateChat = await repo.startPrivateChat(user);
-                    if (context.mounted) {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => ChatPage(chat: privateChat)));
+                trailing: PopupMenuButton<String>(
+                  onSelected: (value) async {
+                    if (value == 'msg') {
+                      Navigator.pop(context); // Close sheet
+                      final privateChat = await repo.startPrivateChat(user);
+                      if (context.mounted) {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => ChatPage(chat: privateChat)));
+                      }
+                    } else if (value == 'remove') {
+                      try {
+                        await repo.removeMemberFromGroup(chat.id, user.id);
+                        if (context.mounted) Navigator.pop(context);
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed to remove: $e")));
+                        }
+                      }
                     }
                   },
-                ) : null,
+                  itemBuilder: (context) => [
+                    if (!isMe) const PopupMenuItem(value: 'msg', child: Text("Message")),
+                    if (!isMe) const PopupMenuItem(value: 'remove', child: Text("Remove", style: TextStyle(color: Colors.red))),
+                  ],
+                ),
               );
             },
           ),
@@ -411,6 +433,74 @@ class _GroupInfoContent extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _AddMemberDialog extends ConsumerStatefulWidget {
+  final String chatId;
+  const _AddMemberDialog({required this.chatId});
+
+  @override
+  ConsumerState<_AddMemberDialog> createState() => _AddMemberDialogState();
+}
+
+class _AddMemberDialogState extends ConsumerState<_AddMemberDialog> {
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _query = "";
+
+  @override
+  void initState() {
+    super.initState();
+    ref.read(chatRepositoryProvider).fetchUsers();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final allUsers = ref.watch(allUsersProvider);
+    final filtered = _query.isEmpty
+        ? allUsers
+        : allUsers.where((u) => u.name.toLowerCase().contains(_query.toLowerCase())).toList();
+
+    return AlertDialog(
+      title: const Text("Add Member"),
+      content: SizedBox(
+        width: 300,
+        height: 400,
+        child: Column(
+          children: [
+            TextField(
+              controller: _searchCtrl,
+              decoration: const InputDecoration(hintText: "Search users..."),
+              onChanged: (v) => setState(() => _query = v),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: ListView.builder(
+                itemCount: filtered.length,
+                itemBuilder: (context, index) {
+                  final user = filtered[index];
+                  return ListTile(
+                    leading: CircleAvatar(child: Text(user.name.isNotEmpty ? user.name[0] : '?')),
+                    title: Text(user.name),
+                    onTap: () async {
+                      try {
+                        await ref.read(chatRepositoryProvider).addMemberToGroup(widget.chatId, user.id);
+                        if (context.mounted) Navigator.pop(context);
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed to add: $e")));
+                        }
+                      }
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("Close"))],
     );
   }
 }
