@@ -221,6 +221,7 @@ class ChatRepository {
 
         final finalMessages = [...newMsgs];
         for (var m in unsyncedMessages) {
+          // If message is not already in the fetched list (deduplication by content/time approximation)
           if (!finalMessages.any((fm) => fm.text == m.text && fm.timestamp.difference(m.timestamp).inSeconds.abs() < 2)) {
             finalMessages.add(m);
           }
@@ -377,6 +378,7 @@ class ChatRepository {
     final body = {
       'content': content,
       'message_type': isGroup ? 'group' : 'private',
+      // Requirement 3: Only the intended recipient receives the private message.
       if (isGroup) 'group': targetId else 'recipient_id': targetId,
     };
 

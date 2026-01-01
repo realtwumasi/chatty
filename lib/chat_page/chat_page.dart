@@ -32,11 +32,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     super.initState();
     _chatId = widget.chat.id;
 
-    // Initial fetch
+    // Fetch immediately
     _refreshMessages();
 
-    // Polling for real-time updates (Requirement 2 & 5)
-    _pollingTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+    // Requirement 2: Group Communication - All online members receive message
+    // Since we don't have WebSockets, we poll every 3 seconds to simulate real-time updates
+    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       _refreshMessages();
     });
 
@@ -44,6 +45,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   void _refreshMessages() {
+    // This fetches messages AND updates group members (detects joins/leaves)
     ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, widget.chat.isGroup);
   }
 
@@ -184,7 +186,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final inputColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
     final isDesktop = Responsive.isDesktop(context);
 
-    // Watch the specific chat from the list to get real-time updates
+    // Reactive State
     final chatList = ref.watch(chatListProvider);
     final currentChat = chatList.firstWhere(
             (c) => c.id == _chatId,
@@ -408,6 +410,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 SizedBox(width: 4.w),
                 if (message.status == MessageStatus.failed)
                   GestureDetector(
+                    // Requirement 5: Reliability - Retry message delivery
                     onTap: () {
                       ref.read(chatRepositoryProvider).resendMessage(_chatId, message, widget.chat.isGroup);
                     },
@@ -508,7 +511,7 @@ class _GroupInfoContent extends ConsumerWidget {
               onPressed: () {
                 repo.leaveGroup(chat.id);
                 Navigator.pop(context);
-                Navigator.pop(context); // Go back to home
+                Navigator.pop(context);
               },
               child: const Text("Leave Group"),
             ),
