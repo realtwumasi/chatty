@@ -19,7 +19,12 @@ class ApiService {
   factory ApiService() => _instance;
   ApiService._internal();
 
-  final String baseUrl = "https://postumbonal-monatomic-cecelia.ngrok-free.dev/api";
+  // Old API
+  // final String baseUrl = "https://postumbonal-monatomic-cecelia.ngrok-free.dev/api";
+
+  // New API
+  final String baseUrl = "https://postumbonal-monatomic-cecelia.ngrok-free.dev/dms/api";
+
   String? _accessToken;
   String? _refreshToken;
 

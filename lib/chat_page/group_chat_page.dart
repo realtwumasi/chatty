@@ -32,7 +32,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   void initState() {
     super.initState();
     _chatId = widget.chat.id;
-    // Initial fetch, then rely on WS
+    // Initial fetch to sync state
     ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, true);
     SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
   }
@@ -75,7 +75,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
           true // isGroup
       );
       _messageController.clear();
-      ref.read(chatRepositoryProvider).sendTyping(_chatId, true, false); // Stop typing immediately
+      ref.read(chatRepositoryProvider).sendTyping(_chatId, true, false); // Stop typing
       _scrollToBottom();
     }
   }
@@ -121,6 +121,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
     }
   }
 
+  // Consistent color generation for user avatars/names
   Color _getUserColor(String username) {
     final colors = [
       Colors.orange, Colors.purple, Colors.pink, Colors.teal,
@@ -135,12 +136,12 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
     final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
     final textColor = Theme.of(context).colorScheme.onSurface;
     final inputColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
-    final isDesktop = Responsive.isDesktop(context);
+    final isDesktop = widget.isDesktop;
 
     final chatList = ref.watch(chatListProvider);
     final currentChat = chatList.firstWhere((c) => c.id == _chatId, orElse: () => widget.chat);
 
-    // Listen for typing events
+    // Typing Indicators
     final typingMap = ref.watch(typingStatusProvider);
     final typingUsers = typingMap[_chatId] ?? {};
     final typingText = typingUsers.isEmpty ? "" : "${typingUsers.join(', ')} typing...";
@@ -187,27 +188,31 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
       body: Column(
         children: [
           Expanded(
-            child: ListView.builder(
+            child: Scrollbar(
               controller: _scrollController,
-              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
-              itemCount: currentChat.messages.length,
-              itemBuilder: (context, index) {
-                final message = currentChat.messages[index];
-                if (message.isSystem) {
-                  return Center(
-                    child: Container(
-                      margin: EdgeInsets.symmetric(vertical: 8.h),
-                      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 4.h),
-                      decoration: BoxDecoration(
-                        color: isDark ? Colors.grey[800] : Colors.grey[200],
-                        borderRadius: BorderRadius.circular(12),
+              thumbVisibility: isDesktop,
+              child: ListView.builder(
+                controller: _scrollController,
+                padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
+                itemCount: currentChat.messages.length,
+                itemBuilder: (context, index) {
+                  final message = currentChat.messages[index];
+                  if (message.isSystem) {
+                    return Center(
+                      child: Container(
+                        margin: EdgeInsets.symmetric(vertical: 8.h),
+                        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 4.h),
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.grey[800] : Colors.grey[200],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(message.text, style: TextStyle(fontSize: 12.sp, color: isDark ? Colors.grey[300] : Colors.grey[800])),
                       ),
-                      child: Text(message.text, style: TextStyle(fontSize: 12.sp, color: isDark ? Colors.grey[300] : Colors.grey[800])),
-                    ),
-                  );
-                }
-                return _buildGroupMessageBubble(message, isDark);
-              },
+                    );
+                  }
+                  return _buildGroupMessageBubble(message, isDark);
+                },
+              ),
             ),
           ),
           Container(
@@ -226,6 +231,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                     ),
                     child: TextField(
                       controller: _messageController,
+                      autofocus: isDesktop, // Auto-focus on desktop
                       onChanged: _onTextChanged,
                       style: TextStyle(color: textColor),
                       decoration: InputDecoration(
@@ -234,7 +240,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                       ),
-                      onSubmitted: (_) => _sendMessage(),
+                      onSubmitted: (_) => _sendMessage(), // Send on Enter
                     ),
                   ),
                 ),
@@ -256,9 +262,12 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
 
   Widget _buildGroupMessageBubble(Message message, bool isDark) {
     final isMe = message.isMe;
+
+    // UI: Bubble Color Logic
     final bubbleColor = isMe
         ? (message.status == MessageStatus.failed ? Colors.red.shade700 : const Color(0xFF1A60FF))
         : (isDark ? const Color(0xFF2C2C2C) : Colors.white);
+
     final textColor = isMe ? Colors.white : (isDark ? Colors.white : Colors.black87);
     final timeColor = isMe ? Colors.white70 : Colors.grey;
     final senderColor = _getUserColor(message.senderName);
@@ -269,11 +278,14 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          // Retry Button (Left of bubble for current user if failed)
           if (isMe && message.status == MessageStatus.failed)
             IconButton(
               icon: const Icon(Icons.refresh, color: Colors.red),
+              tooltip: "Retry Sending",
               onPressed: () => ref.read(chatRepositoryProvider).resendMessage(_chatId, message, true),
             ),
+
           ConstrainedBox(
             constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
             child: Container(
@@ -295,6 +307,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // Sender Name (Only for others)
                   if (!isMe)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4.0),
@@ -303,6 +316,8 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                         style: TextStyle(fontWeight: FontWeight.bold, color: senderColor, fontSize: 13.sp),
                       ),
                     ),
+
+                  // Message Text and Metadata (Time/Tick)
                   Wrap(
                     alignment: WrapAlignment.end,
                     crossAxisAlignment: WrapCrossAlignment.end,
@@ -348,7 +363,6 @@ class _GroupInfoContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final textColor = Theme.of(context).colorScheme.onSurface;
     final repo = ref.read(chatRepositoryProvider);
     final currentUser = ref.watch(userProvider);
 
@@ -367,7 +381,7 @@ class _GroupInfoContent extends ConsumerWidget {
               final user = chat.participants[index];
               final isMe = user.id == currentUser?.id;
               return ListTile(
-                leading: CircleAvatar(child: Text(user.name[0])),
+                leading: CircleAvatar(child: Text(user.name.isNotEmpty ? user.name[0] : '?')),
                 title: Text(user.name + (isMe ? " (You)" : "")),
                 trailing: !isMe ? IconButton(
                   icon: const Icon(Icons.message, color: Color(0xFF1A60FF)),

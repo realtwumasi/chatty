@@ -21,6 +21,7 @@ class HomePage extends ConsumerStatefulWidget {
 
 class _HomePageState extends ConsumerState<HomePage> {
   Chat? _selectedChat;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -29,11 +30,17 @@ class _HomePageState extends ConsumerState<HomePage> {
     ref.read(chatRepositoryProvider).fetchChats();
   }
 
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   void _onChatSelected(Chat chat) {
     if (Responsive.isDesktop(context)) {
       setState(() {
         _selectedChat = chat;
-        chat.unreadCount = 0;
+        chat.unreadCount = 0; // Mark read visually
       });
     } else {
       if (chat.isGroup) {
@@ -128,7 +135,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           Expanded(
             child: RefreshIndicator(
               onRefresh: _handleRefresh,
-              child: _buildChatList(),
+              child: _buildChatList(isDesktop: false),
             ),
           ),
         ],
@@ -143,11 +150,10 @@ class _HomePageState extends ConsumerState<HomePage> {
     final borderColor = isDark ? Colors.grey[800]! : Colors.grey[300]!;
 
     final chatList = ref.watch(chatListProvider);
+    // Find the latest version of the selected chat to ensure messages update in real-time
+    Chat? activeChat = _selectedChat;
     if (_selectedChat != null) {
-      final updated = chatList.where((c) => c.id == _selectedChat!.id).firstOrNull;
-      if (updated != null && updated != _selectedChat) {
-        _selectedChat = updated;
-      }
+      activeChat = chatList.where((c) => c.id == _selectedChat!.id).firstOrNull ?? _selectedChat;
     }
 
     return Scaffold(
@@ -163,7 +169,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                   child: Column(
                     children: [
                       _buildAppBar(textColor, isDark, isDesktop: true),
-                      Expanded(child: _buildChatList()),
+                      Expanded(child: _buildChatList(isDesktop: true)),
                       Divider(height: 1, color: borderColor),
                       _buildCompactUserProfile(isDark, textColor),
                     ],
@@ -171,10 +177,10 @@ class _HomePageState extends ConsumerState<HomePage> {
                 ),
                 VerticalDivider(width: 1, color: borderColor),
                 Expanded(
-                  child: _selectedChat != null
-                      ? (_selectedChat!.isGroup
-                      ? GroupChatPage(key: ValueKey(_selectedChat!.id), chat: _selectedChat!, isDesktop: true)
-                      : ChatPage(key: ValueKey(_selectedChat!.id), chat: _selectedChat!, isDesktop: true))
+                  child: activeChat != null
+                      ? (activeChat.isGroup
+                      ? GroupChatPage(key: ValueKey(activeChat.id), chat: activeChat, isDesktop: true)
+                      : ChatPage(key: ValueKey(activeChat.id), chat: activeChat, isDesktop: true))
                       : _buildEmptyDesktopState(isDark, textColor),
                 ),
               ],
@@ -242,7 +248,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     );
   }
 
-  Widget _buildChatList() {
+  Widget _buildChatList({required bool isDesktop}) {
     final chats = ref.watch(chatListProvider);
     final isLoading = ref.watch(isLoadingProvider);
 
@@ -250,16 +256,23 @@ class _HomePageState extends ConsumerState<HomePage> {
       if (isLoading) return const Center(child: CircularProgressIndicator());
       return Center(child: Text("No chats yet", style: TextStyle(color: Colors.grey[400])));
     }
-    return ListView.builder(
-      itemCount: chats.length,
-      itemBuilder: (context, index) {
-        final chat = chats[index];
-        return MessageTile(
-          chat: chat,
-          isSelected: _selectedChat?.id == chat.id,
-          onTap: () => _onChatSelected(chat),
-        );
-      },
+
+    // Optimization: Add Scrollbar for desktop
+    return Scrollbar(
+      controller: _scrollController,
+      thumbVisibility: isDesktop, // Always show on desktop
+      child: ListView.builder(
+        controller: _scrollController,
+        itemCount: chats.length,
+        itemBuilder: (context, index) {
+          final chat = chats[index];
+          return MessageTile(
+            chat: chat,
+            isSelected: _selectedChat?.id == chat.id,
+            onTap: () => _onChatSelected(chat),
+          );
+        },
+      ),
     );
   }
 

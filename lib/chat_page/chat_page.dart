@@ -121,7 +121,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
     final textColor = Theme.of(context).colorScheme.onSurface;
     final inputColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
-    final isDesktop = Responsive.isDesktop(context);
+    // Optimization: Use isDesktop from widget
+    final isDesktop = widget.isDesktop;
 
     final chatList = ref.watch(chatListProvider);
     final currentChat = chatList.firstWhere((c) => c.id == _chatId, orElse: () => widget.chat);
@@ -168,13 +169,18 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       body: Column(
         children: [
           Expanded(
-            child: ListView.builder(
+            child: Scrollbar(
+              // Optimization: Scrollbar for desktop
               controller: _scrollController,
-              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
-              itemCount: currentChat.messages.length,
-              itemBuilder: (context, index) {
-                return _buildMessageBubble(currentChat.messages[index], isDark);
-              },
+              thumbVisibility: isDesktop,
+              child: ListView.builder(
+                controller: _scrollController,
+                padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
+                itemCount: currentChat.messages.length,
+                itemBuilder: (context, index) {
+                  return _buildMessageBubble(currentChat.messages[index], isDark);
+                },
+              ),
             ),
           ),
           Container(
@@ -193,6 +199,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     ),
                     child: TextField(
                       controller: _messageController,
+                      // Optimization: Autofocus for desktop usage
+                      autofocus: isDesktop,
                       onChanged: _onTextChanged,
                       style: TextStyle(color: textColor),
                       decoration: const InputDecoration(
