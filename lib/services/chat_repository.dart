@@ -16,7 +16,7 @@ final chatListProvider = StateProvider<List<Chat>>((ref) => []);
 final allUsersProvider = StateProvider<List<User>>((ref) => []);
 final isLoadingProvider = StateProvider<bool>((ref) => false);
 final themeProvider = StateProvider<bool>((ref) => false);
-final wsConnectionProvider = ValueNotifier<bool>(false); // Expose WS status
+final wsConnectionProvider = ValueNotifier<bool>(false);
 
 // --- Repository Logic ---
 
@@ -26,7 +26,6 @@ class ChatRepository {
   final WebSocketService _ws = WebSocketService();
 
   ChatRepository(this._ref) {
-    // Sync WS status to a provider/notifier if needed UI feedback
     _ws.isConnected.addListener(() {
       if (kDebugMode) print("WS Status Changed: ${_ws.isConnected.value}");
     });
@@ -162,11 +161,9 @@ class ChatRepository {
     } else {
       final senderId = payload['sender_id']?.toString();
       final recipientId = payload['recipient_id']?.toString();
-      // If I sent it, the chat ID is the recipient. If I received it, chat ID is sender.
       final otherId = (senderId == currentUser.id) ? recipientId : senderId;
       chatIndex = chats.indexWhere((c) => !c.isGroup && c.participants.any((p) => p.id == otherId));
 
-      // Auto-create private chat if it doesn't exist (e.g. unsolicited DM)
       if (chatIndex == -1 && otherId != null) {
         final otherUser = User(
             id: otherId,
@@ -181,7 +178,6 @@ class ChatRepository {
           participants: [currentUser, otherUser],
           unreadCount: 1,
         );
-        // Add to TOP of list
         _ref.read(chatListProvider.notifier).state = [newChat, ...chats];
         _saveChatsToLocal();
         return;
@@ -190,13 +186,11 @@ class ChatRepository {
 
     if (chatIndex != -1) {
       final currentChat = chats[chatIndex];
-      // Deduplication: Don't add if ID matches OR if we have a temp message with same content/timestamp
       if (currentChat.messages.any((m) => m.id == newMessage.id)) return;
 
-      // Filter out 'sending' messages that match this new real message to prevent double bubbles
       final filteredMessages = currentChat.messages.where((m) {
         if (m.isMe && m.status == MessageStatus.sending && m.text == newMessage.text) {
-          return false; // Remove temp message, replace with real one below
+          return false;
         }
         return true;
       }).toList();
@@ -214,7 +208,6 @@ class ChatRepository {
         eventLog: currentChat.eventLog,
       );
 
-      // Move updated chat to TOP of list
       final newChatList = List<Chat>.from(chats);
       newChatList.removeAt(chatIndex);
       newChatList.insert(0, updatedChat);
@@ -225,42 +218,14 @@ class ChatRepository {
   }
 
   void _handleUserJoined(Map<String, dynamic> payload) {
-    final groupId = payload['group_id']?.toString();
-    final userId = payload['user_id']?.toString();
-    final username = payload['username'];
-
-    if (groupId == null || userId == null) return;
-
-    final chats = _ref.read(chatListProvider);
-    final chatIndex = chats.indexWhere((c) => c.id == groupId);
-
-    if (chatIndex != -1) {
-      final currentChat = chats[chatIndex];
-      final sysMsg = _createSystemMessage("$username joined the group");
-
-      final newParticipants = List<User>.from(currentChat.participants);
-      if (!newParticipants.any((u) => u.id == userId)) {
-        newParticipants.add(User(id: userId, name: username, email: ''));
-      }
-
-      final updatedChat = Chat(
-        id: currentChat.id,
-        name: currentChat.name,
-        isGroup: currentChat.isGroup,
-        participants: newParticipants,
-        messages: [...currentChat.messages, sysMsg],
-        unreadCount: currentChat.unreadCount,
-        eventLog: currentChat.eventLog,
-      );
-
-      final newChatList = List<Chat>.from(chats);
-      newChatList[chatIndex] = updatedChat;
-      _ref.read(chatListProvider.notifier).state = newChatList;
-      _saveChatsToLocal();
-    }
+    _updateGroupMembership(payload, true);
   }
 
   void _handleUserLeft(Map<String, dynamic> payload) {
+    _updateGroupMembership(payload, false);
+  }
+
+  void _updateGroupMembership(Map<String, dynamic> payload, bool isJoin) {
     final groupId = payload['group_id']?.toString();
     final userId = payload['user_id']?.toString();
     final username = payload['username'];
@@ -272,8 +237,16 @@ class ChatRepository {
 
     if (chatIndex != -1) {
       final currentChat = chats[chatIndex];
-      final sysMsg = _createSystemMessage("$username left the group");
-      final newParticipants = currentChat.participants.where((u) => u.id != userId).toList();
+      final sysMsg = _createSystemMessage("$username ${isJoin ? 'joined' : 'left'} the group");
+
+      List<User> newParticipants = List<User>.from(currentChat.participants);
+      if (isJoin) {
+        if (!newParticipants.any((u) => u.id == userId)) {
+          newParticipants.add(User(id: userId, name: username, email: ''));
+        }
+      } else {
+        newParticipants.removeWhere((u) => u.id == userId);
+      }
 
       final updatedChat = Chat(
         id: currentChat.id,
@@ -306,7 +279,6 @@ class ChatRepository {
 
   // --- Actions ---
 
-  // Auth methods ... (login, logout, register same as before)
   Future<void> login(String username, String password) async {
     _ref.read(isLoadingProvider.notifier).state = true;
     try {
@@ -329,7 +301,7 @@ class ChatRepository {
         await prefs.setString(_keyUser, jsonEncode(user.toJson()));
       } catch (_) {}
 
-      _initWebSocket(accessToken); // Connect WS
+      _initWebSocket(accessToken);
       await Future.wait([fetchUsers(), fetchChats()]);
     } catch (e) {
       rethrow;
@@ -387,46 +359,116 @@ class ChatRepository {
 
   Future<void> fetchChats() async {
     try {
+      // 1. Fetch Groups
       final response = await _api.get('/groups/');
       final List groupData = (response is Map && response.containsKey('results')) ? response['results'] : [];
-      final fetchedChats = groupData.map((e) => Chat.fromGroupJson(e)).toList();
+      final fetchedGroups = groupData.map((e) => Chat.fromGroupJson(e)).toList();
 
+      // 2. Fetch Recent Private Chats (reconstruct from message history)
+      final privateChats = await _fetchPrivateChatsFromHistory();
+
+      // 3. Merge Strategies
       final currentChats = _ref.read(chatListProvider);
-      final mergedChats = <Chat>[];
+      final mergedMap = <String, Chat>{};
 
-      for (var fetched in fetchedChats) {
-        final existing = currentChats.where((c) => c.id == fetched.id).firstOrNull;
-        if (existing != null) {
-          mergedChats.add(Chat(
-            id: fetched.id,
-            name: fetched.name,
-            isGroup: fetched.isGroup,
-            messages: existing.messages,
-            participants: existing.participants.isEmpty ? fetched.participants : existing.participants,
-            unreadCount: existing.unreadCount,
-            eventLog: existing.eventLog,
-          ));
-          if (_ws.isConnected.value) _ws.subscribeToGroup(fetched.id);
+      // Add reconstructed private chats
+      for (var chat in privateChats) {
+        mergedMap[chat.id] = chat;
+      }
+
+      // Add/Update groups
+      for (var group in fetchedGroups) {
+        final local = currentChats.where((c) => c.id == group.id).firstOrNull;
+        if (local != null) {
+          mergedMap[group.id] = Chat(
+            id: group.id,
+            name: group.name,
+            isGroup: group.isGroup,
+            messages: local.messages,
+            participants: local.participants.isEmpty ? group.participants : local.participants,
+            unreadCount: local.unreadCount,
+            eventLog: local.eventLog,
+          );
         } else {
-          mergedChats.add(fetched);
-          if (_ws.isConnected.value) _ws.subscribeToGroup(fetched.id);
+          mergedMap[group.id] = group;
         }
+
+        if (_ws.isConnected.value) _ws.subscribeToGroup(group.id);
       }
 
+      // Preserve local-only chats
       for (var local in currentChats) {
-        if (!local.isGroup && !mergedChats.any((c) => c.id == local.id)) {
-          mergedChats.add(local);
+        if (!mergedMap.containsKey(local.id)) {
+          mergedMap[local.id] = local;
         }
       }
 
-      _ref.read(chatListProvider.notifier).state = mergedChats;
+      _ref.read(chatListProvider.notifier).state = mergedMap.values.toList();
       _saveChatsToLocal();
     } catch (e) {
       if (kDebugMode) print("Fetch chats error: $e");
     }
   }
 
-  // Note: fetchMessagesForChat is mostly for initial load now. WS handles real-time.
+  // New Method to restore DM list
+  Future<List<Chat>> _fetchPrivateChatsFromHistory() async {
+    try {
+      final response = await _api.get('/messages/', params: {
+        'message_type': 'private',
+        'page_size': '100'
+      });
+
+      final List data = (response is Map && response.containsKey('results')) ? response['results'] : [];
+      final currentUser = _ref.read(userProvider);
+      if (currentUser == null) return [];
+
+      final Map<String, List<Message>> msgsByPartner = {};
+      final Map<String, User> partners = {};
+
+      for (var msgJson in data) {
+        final msg = Message.fromJson(msgJson, currentUser.id);
+
+        final senderData = msgJson['sender'];
+        final recipientData = msgJson['recipient'];
+
+        String partnerId;
+        User partnerUser;
+
+        if (senderData['id'].toString() == currentUser.id) {
+          partnerId = recipientData['id'].toString();
+          partnerUser = User.fromJson(recipientData);
+        } else {
+          partnerId = senderData['id'].toString();
+          partnerUser = User.fromJson(senderData);
+        }
+
+        if (!msgsByPartner.containsKey(partnerId)) {
+          msgsByPartner[partnerId] = [];
+          partners[partnerId] = partnerUser;
+        }
+        msgsByPartner[partnerId]!.add(msg);
+      }
+
+      final List<Chat> restoredChats = [];
+      msgsByPartner.forEach((pid, msgs) {
+        msgs.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+        restoredChats.add(Chat(
+          id: pid,
+          name: partners[pid]!.name,
+          isGroup: false,
+          participants: [currentUser, partners[pid]!],
+          messages: msgs,
+          unreadCount: 0,
+        ));
+      });
+
+      return restoredChats;
+    } catch (e) {
+      if (kDebugMode) print("Private chat restore error: $e");
+      return [];
+    }
+  }
+
   Future<void> fetchMessagesForChat(String chatId, bool isGroup) async {
     try {
       if (isGroup) {
@@ -452,7 +494,6 @@ class ChatRepository {
         final newMsgs = data.map((e) => Message.fromJson(e, currentUser.id)).toList();
         newMsgs.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
-        // Merge logic to keep local-only messages (pending/failed/system)
         final currentMessages = chats[chatIndex].messages;
         final localOnlyMessages = currentMessages.where((m) =>
         m.status == MessageStatus.sending || m.status == MessageStatus.failed || m.isSystem
@@ -460,7 +501,6 @@ class ChatRepository {
 
         final finalMessages = [...newMsgs];
         for (var local in localOnlyMessages) {
-          // Prevent dupes if system messages or pending ones are somehow fetched
           if (!finalMessages.any((m) => m.id == local.id)) {
             finalMessages.add(local);
           }
@@ -472,7 +512,7 @@ class ChatRepository {
           name: chats[chatIndex].name,
           isGroup: chats[chatIndex].isGroup,
           participants: chats[chatIndex].participants,
-          unreadCount: 0, // Reset unread when we fetch explictly (user opened chat)
+          unreadCount: 0,
           eventLog: chats[chatIndex].eventLog,
           messages: finalMessages,
         );
@@ -553,7 +593,6 @@ class ChatRepository {
   }
 
   Future<void> resendMessage(String chatId, Message message, bool isGroup) async {
-    // Remove failed, then re-send
     final chats = _ref.read(chatListProvider);
     final chatIndex = chats.indexWhere((c) => isGroup ? c.id == chatId : c.participants.any((p) => p.id == chatId));
 
@@ -612,7 +651,6 @@ class ChatRepository {
         messages: [...chats[chatIndex].messages, tempMsg],
       );
 
-      // Move to top
       final newChatList = List<Chat>.from(chats);
       newChatList.removeAt(chatIndex);
       newChatList.insert(0, updatedChat);
@@ -622,11 +660,9 @@ class ChatRepository {
 
     try {
       await _api.post(endpoint, body);
-      // WS will deliver the confirmation, no need to fetch if WS is active
     } catch (e) {
       if (chatIndex != -1) {
         final currentChats = _ref.read(chatListProvider);
-        // Locate chat again as it might have moved
         final currentIndex = currentChats.indexWhere((c) => c.id == (isGroup ? targetId : chats[chatIndex].id));
         if (currentIndex != -1) {
           final msgs = List<Message>.from(currentChats[currentIndex].messages);

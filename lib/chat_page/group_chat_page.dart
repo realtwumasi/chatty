@@ -31,7 +31,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   void initState() {
     super.initState();
     _chatId = widget.chat.id;
-    // Initial fetch, then rely on WS
+    // Initial fetch to sync state
     ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, true);
     SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
   }
@@ -81,8 +81,6 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
     });
   }
 
-  // --- UI Helpers ---
-
   void _showGroupInfo(Chat currentChat) {
     if (Responsive.isDesktop(context)) {
       showDialog(
@@ -108,7 +106,6 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
     }
   }
 
-  // Generate a consistent color for a username
   Color _getUserColor(String username) {
     final colors = [
       Colors.orange, Colors.purple, Colors.pink, Colors.teal,

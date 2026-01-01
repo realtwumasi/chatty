@@ -31,7 +31,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   void initState() {
     super.initState();
     _chatId = widget.chat.id;
-    // Initial fetch, then rely on WS
     ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, false);
     SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
   }
