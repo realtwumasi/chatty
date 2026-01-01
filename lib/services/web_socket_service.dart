@@ -8,25 +8,33 @@ class WebSocketService {
   WebSocketChannel? _channel;
   StreamSubscription? _subscription;
   Timer? _pingTimer;
+  Timer? _reconnectTimer;
+  String? _lastToken;
+  bool _isDisconnecting = false;
 
   // Expose a stream of decoded JSON events
   final _eventController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get events => _eventController.stream;
 
-  bool get isConnected => _channel != null;
+  // Connection State
+  final ValueNotifier<bool> isConnected = ValueNotifier(false);
 
   void connect(String token) {
     if (_channel != null) return;
+    _lastToken = token;
+    _isDisconnecting = false;
 
     final uri = Uri.parse('wss://postumbonal-monatomic-cecelia.ngrok-free.dev/ws?token=$token');
 
     try {
+      if (kDebugMode) print('WS: Connecting...');
       _channel = WebSocketChannel.connect(uri);
+      isConnected.value = true;
 
       _subscription = _channel!.stream.listen(
             (message) {
           if (kDebugMode) {
-            print('WS Received: $message');
+            // print('WS Received: $message'); // Uncomment for deep debug
           }
           try {
             final data = jsonDecode(message);
@@ -36,27 +44,35 @@ class WebSocketService {
           }
         },
         onDone: () {
-          print('WS Closed');
+          print('WS: Closed by server');
+          isConnected.value = false;
           _cleanup();
-          // Optional: Implement reconnection logic here
+          _attemptReconnect();
         },
         onError: (error) {
           print('WS Error: $error');
+          isConnected.value = false;
           _cleanup();
+          _attemptReconnect();
         },
       );
 
       _startHeartbeat();
     } catch (e) {
       print('WS Connection Error: $e');
+      isConnected.value = false;
+      _attemptReconnect();
     }
   }
 
   void disconnect() {
+    _isDisconnecting = true;
+    _reconnectTimer?.cancel();
     if (_channel != null) {
       _channel!.sink.close(status.goingAway);
       _cleanup();
     }
+    isConnected.value = false;
   }
 
   void _cleanup() {
@@ -75,15 +91,31 @@ class WebSocketService {
     });
   }
 
+  void _attemptReconnect() {
+    if (_isDisconnecting || _lastToken == null) return;
+
+    // Exponential backoff or simple delay
+    if (_reconnectTimer?.isActive ?? false) return;
+
+    print('WS: Scheduling reconnect in 5s...');
+    _reconnectTimer = Timer(const Duration(seconds: 5), () {
+      if (!_isDisconnecting && _lastToken != null) {
+        print('WS: Attempting reconnect...');
+        connect(_lastToken!);
+      }
+    });
+  }
+
   void send(String type, Map<String, dynamic> data) {
     if (_channel != null) {
-      final message = jsonEncode({
-        'type': type,
-        'data': data,
-      });
-      _channel!.sink.add(message);
-      if (kDebugMode && type != 'ping') {
-        print('WS Sent: $message');
+      try {
+        final message = jsonEncode({
+          'type': type,
+          'data': data,
+        });
+        _channel!.sink.add(message);
+      } catch (e) {
+        print('WS Send Error: $e');
       }
     }
   }
@@ -94,13 +126,5 @@ class WebSocketService {
 
   void unsubscribeFromGroup(String groupId) {
     send('unsubscribe_group', {'group_id': groupId});
-  }
-
-  void sendTyping(String? groupId, String? recipientId, bool isTyping) {
-    send('typing_indicator', {
-      if (groupId != null) 'group_id': groupId,
-      if (recipientId != null) 'recipient_id': recipientId,
-      'is_typing': isTyping,
-    });
   }
 }

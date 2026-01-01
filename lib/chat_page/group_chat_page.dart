@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,7 +6,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../model/data_models.dart';
 import '../model/responsive_helper.dart';
 import '../services/chat_repository.dart';
-import 'chat_page.dart'; // Needed for navigating to private chat from group info
+import 'chat_page.dart';
 
 class GroupChatPage extends ConsumerStatefulWidget {
   final Chat chat;
@@ -27,19 +26,14 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   late String _chatId;
-  Timer? _pollingTimer;
 
   @override
   void initState() {
     super.initState();
     _chatId = widget.chat.id;
-    _refreshMessages();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) => _refreshMessages());
-    SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
-  }
-
-  void _refreshMessages() {
+    // Initial fetch, then rely on WS
     ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, true);
+    SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
   }
 
   @override
@@ -47,14 +41,13 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.chat.id != widget.chat.id) {
       _chatId = widget.chat.id;
-      _refreshMessages();
+      ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, true);
       _messageController.clear();
     }
   }
 
   @override
   void dispose() {
-    _pollingTimer?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();

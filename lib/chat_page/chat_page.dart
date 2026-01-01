@@ -7,7 +7,7 @@ import '../model/data_models.dart';
 import '../model/responsive_helper.dart';
 import '../services/chat_repository.dart';
 
-// This is now strictly for PRIVATE chats
+// Strictly for Private Chats
 class ChatPage extends ConsumerStatefulWidget {
   final Chat chat;
   final bool isDesktop;
@@ -26,19 +26,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   late String _chatId;
-  Timer? _pollingTimer;
 
   @override
   void initState() {
     super.initState();
     _chatId = widget.chat.id;
-    _refreshMessages();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) => _refreshMessages());
+    // Initial fetch, then rely on WS
+    ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, false);
     SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
-  }
-
-  void _refreshMessages() {
-    ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, false); // Always private
   }
 
   @override
@@ -46,14 +41,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.chat.id != widget.chat.id) {
       _chatId = widget.chat.id;
-      _refreshMessages();
+      ref.read(chatRepositoryProvider).fetchMessagesForChat(_chatId, false);
       _messageController.clear();
     }
   }
 
   @override
   void dispose() {
-    _pollingTimer?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -75,15 +69,17 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         if (animated) {
-          _scrollController.animateTo(_scrollController.position.maxScrollExtent, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
         } else {
           _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
         }
       }
     });
   }
-
-  // --- UI Helpers ---
 
   void _showPrivateChatDetails(Chat currentChat) {
     if (Responsive.isDesktop(context)) {
@@ -156,16 +152,26 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           ),
           Container(
             padding: EdgeInsets.all(isDesktop ? 20 : 10),
-            decoration: BoxDecoration(color: backgroundColor, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 5)]),
+            decoration: BoxDecoration(
+              color: backgroundColor,
+              boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 5)],
+            ),
             child: Row(
               children: [
                 Expanded(
                   child: Container(
-                    decoration: BoxDecoration(color: inputColor, borderRadius: BorderRadius.circular(25)),
+                    decoration: BoxDecoration(
+                      color: inputColor,
+                      borderRadius: BorderRadius.circular(25),
+                    ),
                     child: TextField(
                       controller: _messageController,
                       style: TextStyle(color: textColor),
-                      decoration: const InputDecoration(hintText: "Type a message...", border: InputBorder.none, contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 12)),
+                      decoration: const InputDecoration(
+                        hintText: "Type a message...",
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      ),
                       onSubmitted: (_) => _sendMessage(),
                     ),
                   ),
@@ -173,7 +179,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 const SizedBox(width: 8),
                 CircleAvatar(
                   backgroundColor: const Color(0xFF1A60FF),
-                  child: IconButton(icon: const Icon(Icons.send, color: Colors.white, size: 20), onPressed: _sendMessage),
+                  child: IconButton(
+                    icon: const Icon(Icons.send, color: Colors.white, size: 20),
+                    onPressed: _sendMessage,
+                  ),
                 ),
               ],
             ),
@@ -217,7 +226,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      "${message.timestamp.hour}:${message.timestamp.minute.toString().padLeft(2, '0')}",
+                      "${message.timestamp.hour.toString().padLeft(2, '0')}:${message.timestamp.minute.toString().padLeft(2, '0')}",
                       style: TextStyle(color: isMe ? Colors.white70 : Colors.grey, fontSize: 10),
                     ),
                     if (isMe) ...[
