@@ -7,6 +7,7 @@ import '../model/data_models.dart';
 import '../model/responsive_helper.dart';
 import '../services/chat_repository.dart';
 
+// Strictly for Private Chats
 class ChatPage extends ConsumerStatefulWidget {
   final Chat chat;
   final bool isDesktop;
@@ -80,16 +81,21 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   void _sendMessage() {
-    if (_messageController.text.trim().isNotEmpty) {
-      final repo = ref.read(chatRepositoryProvider);
+    // 1. Capture text FIRST
+    final text = _messageController.text.trim();
 
+    if (text.isNotEmpty) {
+      final repo = ref.read(chatRepositoryProvider);
       final replyContext = _replyingTo;
+
+      // 2. Clear UI
       _messageController.clear();
       setState(() => _replyingTo = null);
 
+      // 3. Send using captured text
       repo.sendMessage(
           _chatId,
-          _messageController.text.trim(),
+          text,
           false,
           replyTo: replyContext
       );
