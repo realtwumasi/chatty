@@ -35,6 +35,9 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   // Reply State
   Message? _replyingTo;
 
+  // Scroll State
+  bool _showScrollToBottom = false;
+
   @override
   void initState() {
     super.initState();
@@ -47,7 +50,21 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
       _repository.fetchMessagesForChat(_chatId, true);
     });
 
+    _scrollController.addListener(_scrollListener);
     SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
+  }
+
+  void _scrollListener() {
+    if (_scrollController.hasClients) {
+      // Show button if we are more than 300 pixels from the bottom
+      final distanceToBottom = _scrollController.position.maxScrollExtent - _scrollController.offset;
+      final show = distanceToBottom > 300;
+      if (show != _showScrollToBottom) {
+        setState(() {
+          _showScrollToBottom = show;
+        });
+      }
+    }
   }
 
   @override
@@ -69,6 +86,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   void dispose() {
     _repository.leaveChat();
     _typingDebounce?.cancel();
+    _scrollController.removeListener(_scrollListener);
     _messageController.dispose();
     _scrollController.dispose();
     _inputFocusNode.dispose();
@@ -92,7 +110,9 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
       final replyContext = _replyingTo;
 
       _messageController.clear();
-      setState(() => _replyingTo = null);
+      if (mounted) {
+        setState(() => _replyingTo = null);
+      }
 
       repo.sendMessage(
           _chatId,
@@ -201,78 +221,94 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
       body: Column(
         children: [
           Expanded(
-            child: Scrollbar(
-              controller: _scrollController,
-              thumbVisibility: isDesktop,
-              child: ListView.builder(
-                controller: _scrollController,
-                padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
-                itemCount: currentChat.messages.length,
-                itemBuilder: (context, index) {
-                  final message = currentChat.messages[index];
-                  if (message.isSystem) {
-                    return Center(
-                      child: Container(
-                        margin: EdgeInsets.symmetric(vertical: 8.h),
-                        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 4.h),
-                        decoration: BoxDecoration(
-                          color: isDark ? Colors.grey[800] : Colors.grey[200],
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(message.text, style: TextStyle(fontSize: 12.sp, color: isDark ? Colors.grey[300] : Colors.grey[800])),
-                      ),
-                    );
-                  }
-
-                  // Optimization: Smart Grouping and Date Headers
-                  bool showName = true;
-                  bool showDate = false;
-
-                  if (index > 0) {
-                    final prevMessage = currentChat.messages[index - 1];
-                    // Hide name if previous message was from same sender AND not system
-                    if (prevMessage.senderId == message.senderId && !prevMessage.isSystem) {
-                      showName = false;
-                    }
-                    // Show date if day changed
-                    if (!_isSameDay(prevMessage.timestamp, message.timestamp)) {
-                      showDate = true;
-                      showName = true; // Reset name visibility on new day
-                    }
-                  } else {
-                    showDate = true; // Always show date for first message
-                  }
-
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (showDate) _DateHeader(date: message.timestamp, isDark: isDark),
-                      GestureDetector(
-                        onLongPress: () => _onSwipeReply(message),
-                        child: Dismissible(
-                          key: ValueKey(message.id),
-                          direction: DismissDirection.startToEnd,
-                          confirmDismiss: (_) async {
-                            _onSwipeReply(message);
-                            return false;
-                          },
-                          background: Container(
-                            alignment: Alignment.centerLeft,
-                            padding: EdgeInsets.only(left: 20),
-                            child: Icon(Icons.reply, color: const Color(0xFF1A60FF)),
+            child: Stack(
+              children: [
+                Scrollbar(
+                  controller: _scrollController,
+                  thumbVisibility: isDesktop,
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
+                    itemCount: currentChat.messages.length,
+                    itemBuilder: (context, index) {
+                      final message = currentChat.messages[index];
+                      if (message.isSystem) {
+                        return Center(
+                          child: Container(
+                            margin: EdgeInsets.symmetric(vertical: 8.h),
+                            padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 4.h),
+                            decoration: BoxDecoration(
+                              color: isDark ? Colors.grey[800] : Colors.grey[200],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(message.text, style: TextStyle(fontSize: 12.sp, color: isDark ? Colors.grey[300] : Colors.grey[800])),
                           ),
-                          child: _GroupMessageBubble(
-                            message: message,
-                            isDark: isDark,
-                            onRetry: () => ref.read(chatRepositoryProvider).resendMessage(_chatId, message, true),
-                            showName: showName,
+                        );
+                      }
+
+                      // Optimization: Smart Grouping and Date Headers
+                      bool showName = true;
+                      bool showDate = false;
+
+                      if (index > 0) {
+                        final prevMessage = currentChat.messages[index - 1];
+                        // Hide name if previous message was from same sender AND not system
+                        if (prevMessage.senderId == message.senderId && !prevMessage.isSystem) {
+                          showName = false;
+                        }
+                        // Show date if day changed
+                        if (!_isSameDay(prevMessage.timestamp, message.timestamp)) {
+                          showDate = true;
+                          showName = true; // Reset name visibility on new day
+                        }
+                      } else {
+                        showDate = true; // Always show date for first message
+                      }
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (showDate) _DateHeader(date: message.timestamp, isDark: isDark),
+                          GestureDetector(
+                            onLongPress: () => _onSwipeReply(message),
+                            child: Dismissible(
+                              key: ValueKey(message.id),
+                              direction: DismissDirection.startToEnd,
+                              confirmDismiss: (_) async {
+                                _onSwipeReply(message);
+                                return false;
+                              },
+                              background: Container(
+                                alignment: Alignment.centerLeft,
+                                padding: EdgeInsets.only(left: 20),
+                                child: Icon(Icons.reply, color: const Color(0xFF1A60FF)),
+                              ),
+                              child: _GroupMessageBubble(
+                                message: message,
+                                isDark: isDark,
+                                onRetry: () => ref.read(chatRepositoryProvider).resendMessage(_chatId, message, true),
+                                showName: showName,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                // Jump to Bottom FAB
+                if (_showScrollToBottom)
+                  Positioned(
+                    bottom: 20.h,
+                    right: 20.w,
+                    child: FloatingActionButton.small(
+                      onPressed: () => _scrollToBottom(animated: true),
+                      backgroundColor: const Color(0xFF1A60FF),
+                      child: const Icon(Icons.arrow_downward, color: Colors.white),
+                    ),
+                  ),
+              ],
             ),
           ),
 

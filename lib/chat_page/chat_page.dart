@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart'; // Added for HapticFeedback
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:intl/intl.dart'; // Added for DateFormat
 import '../model/data_models.dart';
 import '../model/responsive_helper.dart';
 import '../services/chat_repository.dart';
@@ -25,10 +27,16 @@ class ChatPage extends ConsumerStatefulWidget {
 class _ChatPageState extends ConsumerState<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _inputFocusNode = FocusNode(); // Added FocusNode
   late String _chatId;
   Timer? _typingDebounce;
   late ChatRepository _repository;
+
+  // Reply State
   Message? _replyingTo;
+
+  // Scroll State
+  bool _showScrollToBottom = false; // Added Scroll State
 
   @override
   void initState() {
@@ -41,7 +49,21 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       _repository.fetchMessagesForChat(_chatId, false);
     });
 
+    _scrollController.addListener(_scrollListener); // Added listener
     SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
+  }
+
+  void _scrollListener() {
+    if (_scrollController.hasClients) {
+      // Show button if we are more than 300 pixels from the bottom
+      final distanceToBottom = _scrollController.position.maxScrollExtent - _scrollController.offset;
+      final show = distanceToBottom > 300;
+      if (show != _showScrollToBottom) {
+        setState(() {
+          _showScrollToBottom = show;
+        });
+      }
+    }
   }
 
   @override
@@ -63,8 +85,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   void dispose() {
     _repository.leaveChat();
     _typingDebounce?.cancel();
+    _scrollController.removeListener(_scrollListener);
     _messageController.dispose();
     _scrollController.dispose();
+    _inputFocusNode.dispose();
     super.dispose();
   }
 
@@ -81,40 +105,45 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   void _sendMessage() {
-    // 1. Capture text FIRST
     final text = _messageController.text.trim();
-
     if (text.isNotEmpty) {
       final repo = ref.read(chatRepositoryProvider);
       final replyContext = _replyingTo;
 
-      // 2. Clear UI
       _messageController.clear();
-      setState(() => _replyingTo = null);
+      if (mounted) {
+        setState(() => _replyingTo = null);
+      }
 
-      // 3. Send using captured text
       repo.sendMessage(
           _chatId,
           text,
-          false,
+          false, // isGroup = false
           replyTo: replyContext
       );
 
       repo.sendTyping(_chatId, false, false);
       _scrollToBottom();
+
+      // Keep focus on desktop for rapid messaging
+      if (widget.isDesktop) {
+        _inputFocusNode.requestFocus();
+      }
     }
   }
 
   void _onSwipeReply(Message message) {
+    HapticFeedback.lightImpact(); // Added Haptic
     setState(() {
       _replyingTo = message;
     });
+    _inputFocusNode.requestFocus(); // Focus input
   }
 
   void _scrollToBottom({bool animated = true}) {
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
-        Future.delayed(const Duration(milliseconds: 100), () {
+        Future.delayed(const Duration(milliseconds: 50), () {
           if (_scrollController.hasClients) {
             if (animated) {
               _scrollController.animateTo(
@@ -150,6 +179,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     }
   }
 
+  bool _isSameDay(DateTime date1, DateTime date2) {
+    return date1.year == date2.year && date1.month == date2.month && date1.day == date2.day;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -161,9 +194,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final chatList = ref.watch(chatListProvider);
     final currentChat = chatList.firstWhere((c) => c.id == _chatId, orElse: () => widget.chat);
 
-    final typingMap = ref.watch(typingStatusProvider);
-    final typingUsers = typingMap[_chatId] ?? {};
-    final isTyping = typingUsers.isNotEmpty;
+    // Extracted typing logic to _PrivateChatTitle widget to prevent full rebuilds
 
     return Scaffold(
       backgroundColor: backgroundColor,
@@ -174,26 +205,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           icon: Icon(Icons.arrow_back, color: textColor),
           onPressed: () => Navigator.pop(context),
         ),
+        // Optimization: Extracted title
         title: InkWell(
           onTap: () => _showPrivateChatDetails(currentChat),
-          child: Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: const Color(0xFF1A60FF),
-                radius: 18,
-                child: Text(currentChat.name.isNotEmpty ? currentChat.name[0] : '?', style: const TextStyle(color: Colors.white)),
-              ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(currentChat.name, style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: 16)),
-                  if (isTyping)
-                    Text("typing...", style: TextStyle(color: const Color(0xFF1A60FF), fontSize: 12, fontWeight: FontWeight.bold)),
-                ],
-              ),
-            ],
-          ),
+          child: _PrivateChatTitle(chat: currentChat, chatId: _chatId, textColor: textColor),
         ),
         actions: [
           IconButton(icon: Icon(Icons.more_vert, color: textColor), onPressed: () => _showPrivateChatDetails(currentChat)),
@@ -202,34 +217,103 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       body: Column(
         children: [
           Expanded(
-            child: Scrollbar(
-              controller: _scrollController,
-              thumbVisibility: isDesktop,
-              child: ListView.builder(
-                controller: _scrollController,
-                padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
-                itemCount: currentChat.messages.length,
-                itemBuilder: (context, index) {
-                  final msg = currentChat.messages[index];
-                  return GestureDetector(
-                    onLongPress: () => _onSwipeReply(msg),
-                    child: Dismissible(
-                      key: ValueKey(msg.id),
-                      direction: DismissDirection.startToEnd,
-                      confirmDismiss: (direction) async {
-                        _onSwipeReply(msg);
-                        return false;
-                      },
-                      background: Container(
-                        alignment: Alignment.centerLeft,
-                        padding: EdgeInsets.only(left: 20),
-                        child: Icon(Icons.reply, color: const Color(0xFF1A60FF)),
-                      ),
-                      child: _buildMessageBubble(msg, isDark),
+            child: Stack(
+              children: [
+                Scrollbar(
+                  controller: _scrollController,
+                  thumbVisibility: isDesktop,
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag, // Added
+                    padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
+                    itemCount: currentChat.messages.length,
+                    itemBuilder: (context, index) {
+                      final msg = currentChat.messages[index];
+
+                      // Handling System Messages
+                      if (msg.isSystem) {
+                        return Center(
+                          child: Container(
+                            margin: EdgeInsets.symmetric(vertical: 8.h),
+                            padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 4.h),
+                            decoration: BoxDecoration(
+                              color: isDark ? Colors.grey[800] : Colors.grey[200],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                                msg.text,
+                                style: TextStyle(
+                                    fontSize: 12.sp,
+                                    color: isDark ? Colors.grey[300] : Colors.grey[800]
+                                )
+                            ),
+                          ),
+                        );
+                      }
+
+                      // Optimization: Date Headers & Message Grouping
+                      bool showDate = false;
+                      bool isFirstInSequence = true;
+
+                      if (index > 0) {
+                        final prevMessage = currentChat.messages[index - 1];
+                        // If previous message is same sender and not system, this is a continuation
+                        if (prevMessage.senderId == msg.senderId && !prevMessage.isSystem) {
+                          isFirstInSequence = false;
+                        }
+
+                        // Check date boundary
+                        if (!_isSameDay(prevMessage.timestamp, msg.timestamp)) {
+                          showDate = true;
+                          isFirstInSequence = true; // Reset grouping on new day
+                        }
+                      } else {
+                        showDate = true;
+                      }
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (showDate) _DateHeader(date: msg.timestamp, isDark: isDark),
+                          GestureDetector(
+                            onLongPress: () => _onSwipeReply(msg),
+                            child: Dismissible(
+                              key: ValueKey(msg.id),
+                              direction: DismissDirection.startToEnd,
+                              confirmDismiss: (direction) async {
+                                _onSwipeReply(msg);
+                                return false;
+                              },
+                              background: Container(
+                                alignment: Alignment.centerLeft,
+                                padding: EdgeInsets.only(left: 20),
+                                child: Icon(Icons.reply, color: const Color(0xFF1A60FF)),
+                              ),
+                              child: _PrivateMessageBubble(
+                                message: msg,
+                                isDark: isDark,
+                                isFirstInSequence: isFirstInSequence,
+                                onRetry: () => ref.read(chatRepositoryProvider).resendMessage(_chatId, msg, false),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                // Jump to Bottom FAB
+                if (_showScrollToBottom)
+                  Positioned(
+                    bottom: 20.h,
+                    right: 20.w,
+                    child: FloatingActionButton.small(
+                      onPressed: () => _scrollToBottom(animated: true),
+                      backgroundColor: const Color(0xFF1A60FF),
+                      child: const Icon(Icons.arrow_downward, color: Colors.white),
                     ),
-                  );
-                },
-              ),
+                  ),
+              ],
             ),
           ),
 
@@ -271,6 +355,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     ),
                     child: TextField(
                       controller: _messageController,
+                      focusNode: _inputFocusNode, // Added focus node
                       autofocus: isDesktop,
                       onChanged: _onTextChanged,
                       style: TextStyle(color: textColor),
@@ -298,31 +383,131 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       ),
     );
   }
+}
 
-  Widget _buildMessageBubble(Message message, bool isDark) {
+// Extracted for performance
+class _PrivateChatTitle extends ConsumerWidget {
+  final Chat chat;
+  final String chatId;
+  final Color textColor;
+
+  const _PrivateChatTitle({required this.chat, required this.chatId, required this.textColor});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final typingMap = ref.watch(typingStatusProvider);
+    final typingUsers = typingMap[chatId] ?? {};
+    final isTyping = typingUsers.isNotEmpty;
+
+    return Row(
+      children: [
+        CircleAvatar(
+          backgroundColor: const Color(0xFF1A60FF),
+          radius: 18,
+          child: Text(chat.name.isNotEmpty ? chat.name[0] : '?', style: const TextStyle(color: Colors.white)),
+        ),
+        const SizedBox(width: 10),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(chat.name, style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: 16)),
+            if (isTyping)
+              Text("typing...", style: TextStyle(color: const Color(0xFF1A60FF), fontSize: 12, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _DateHeader extends StatelessWidget {
+  final DateTime date;
+  final bool isDark;
+
+  const _DateHeader({required this.date, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final dateOnly = DateTime(date.year, date.month, date.day);
+
+    String text;
+    if (dateOnly == today) {
+      text = "Today";
+    } else if (dateOnly == yesterday) {
+      text = "Yesterday";
+    } else {
+      text = DateFormat('MMMM d, y').format(date);
+    }
+
+    return Center(
+      child: Container(
+        margin: EdgeInsets.symmetric(vertical: 12.h),
+        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 4.h),
+        decoration: BoxDecoration(
+          color: isDark ? Colors.grey[800] : Colors.grey[200],
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w500, color: isDark ? Colors.grey[300] : Colors.grey[600]),
+        ),
+      ),
+    );
+  }
+}
+
+class _PrivateMessageBubble extends StatelessWidget {
+  final Message message;
+  final bool isDark;
+  final bool isFirstInSequence;
+  final VoidCallback onRetry;
+
+  const _PrivateMessageBubble({
+    required this.message,
+    required this.isDark,
+    required this.onRetry,
+    this.isFirstInSequence = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     final isMe = message.isMe;
     final bubbleColor = isMe
         ? (message.status == MessageStatus.failed ? Colors.red.shade700 : const Color(0xFF1A60FF))
-        : (isDark ? const Color(0xFF2C2C2C) : Colors.grey[200]);
+        : (isDark ? const Color(0xFF2C2C2C) : Colors.white); // Changed to White for consistency
     final textColor = isMe ? Colors.white : (isDark ? Colors.white : Colors.black87);
+    final timeColor = isMe ? Colors.white70 : Colors.grey;
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (isMe && message.status == MessageStatus.failed)
             IconButton(
               icon: const Icon(Icons.refresh, color: Colors.red),
-              onPressed: () => ref.read(chatRepositoryProvider).resendMessage(_chatId, message, false),
+              onPressed: onRetry,
             ),
           Container(
-            margin: EdgeInsets.symmetric(vertical: 4.h),
-            padding: const EdgeInsets.all(12),
+            margin: EdgeInsets.only(top: 2.h, bottom: 2.h), // Consistent spacing
+            padding: const EdgeInsets.all(10),
             constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
             decoration: BoxDecoration(
               color: bubbleColor,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.only(
+                // Grouping visual logic: if NOT first in sequence, reduce the corner radius to look merged
+                topLeft: Radius.circular((!isMe && !isFirstInSequence) ? 2.r : 16.r),
+                topRight: Radius.circular((isMe && !isFirstInSequence) ? 2.r : 16.r),
+                bottomLeft: isMe ? Radius.circular(16.r) : Radius.zero,
+                bottomRight: isMe ? Radius.zero : Radius.circular(16.r),
+              ),
+              boxShadow: [
+                if (!isDark && !isMe) BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 2, offset: const Offset(0, 1))
+              ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -332,7 +517,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     margin: EdgeInsets.only(bottom: 6),
                     padding: EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.05),
+                        color: isMe ? Colors.white.withOpacity(0.2) : Colors.black.withOpacity(0.05),
                         borderRadius: BorderRadius.circular(8),
                         border: Border(left: BorderSide(color: isMe ? Colors.white70 : const Color(0xFF1A60FF), width: 3))
                     ),
@@ -340,34 +525,42 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(message.replyToSender ?? "Unknown", style: TextStyle(color: isMe ? Colors.white70 : const Color(0xFF1A60FF), fontWeight: FontWeight.bold, fontSize: 11)),
-                        Text(message.replyToContent ?? "...", style: TextStyle(color: isMe ? Colors.white60 : Colors.black54, fontSize: 11, overflow: TextOverflow.ellipsis), maxLines: 1),
+                        Text(message.replyToContent ?? "...", style: TextStyle(color: isMe ? Colors.white60 : (isDark ? Colors.grey[300] : Colors.black54), fontSize: 11, overflow: TextOverflow.ellipsis), maxLines: 1),
                       ],
                     ),
                   ),
 
-                Text(message.text, style: TextStyle(color: textColor, fontSize: 15)),
-                const SizedBox(height: 4),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.end,
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.end,
+                  spacing: 8,
                   children: [
-                    Text(
-                      "${message.timestamp.hour.toString().padLeft(2, '0')}:${message.timestamp.minute.toString().padLeft(2, '0')}",
-                      style: TextStyle(color: isMe ? Colors.white70 : Colors.grey, fontSize: 10),
+                    Text(message.text, style: TextStyle(color: textColor, fontSize: 15.sp)),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4.0),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            "${message.timestamp.hour.toString().padLeft(2, '0')}:${message.timestamp.minute.toString().padLeft(2, '0')}",
+                            style: TextStyle(color: timeColor, fontSize: 10.sp),
+                          ),
+                          if (isMe) ...[
+                            const SizedBox(width: 4),
+                            Icon(
+                                message.status == MessageStatus.sending ? Icons.access_time :
+                                (message.status == MessageStatus.read
+                                    ? Icons.done_all
+                                    : (message.status == MessageStatus.failed ? Icons.error : Icons.done)),
+                                size: 12,
+                                color: message.status == MessageStatus.read ? Colors.lightBlueAccent : timeColor
+                            )
+                          ]
+                        ],
+                      ),
                     ),
-                    if (isMe) ...[
-                      const SizedBox(width: 4),
-                      Icon(
-                          message.status == MessageStatus.sending ? Icons.access_time :
-                          (message.status == MessageStatus.read
-                              ? Icons.done_all
-                              : (message.status == MessageStatus.failed ? Icons.error : Icons.done)),
-                          size: 12,
-                          color: message.status == MessageStatus.read ? Colors.lightBlueAccent : Colors.white70
-                      )
-                    ]
                   ],
-                )
+                ),
               ],
             ),
           ),
@@ -392,7 +585,7 @@ class _PrivateChatInfoContent extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          CircleAvatar(radius: 40, backgroundColor: Colors.grey[300], child: Text(otherUser.name[0], style: const TextStyle(fontSize: 32))),
+          CircleAvatar(radius: 40, backgroundColor: Colors.grey[300], child: Text(otherUser.name.isNotEmpty ? otherUser.name[0] : '?', style: const TextStyle(fontSize: 32))),
           const SizedBox(height: 15),
           Text(otherUser.name, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textColor)),
           Text(otherUser.email, style: const TextStyle(color: Colors.grey)),
