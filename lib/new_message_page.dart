@@ -21,6 +21,7 @@ class _NewMessagePageState extends ConsumerState<NewMessagePage> {
   @override
   void initState() {
     super.initState();
+    // Ensure we have the latest user list
     ref.read(chatRepositoryProvider).fetchUsers();
   }
 
@@ -28,6 +29,15 @@ class _NewMessagePageState extends ConsumerState<NewMessagePage> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  // Consistent color generation
+  Color _getUserColor(String username) {
+    final colors = [
+      Colors.orange, Colors.purple, Colors.pink, Colors.teal,
+      Colors.blue, Colors.green, Colors.redAccent, Colors.indigo
+    ];
+    return colors[username.hashCode.abs() % colors.length];
   }
 
   @override
@@ -42,7 +52,10 @@ class _NewMessagePageState extends ConsumerState<NewMessagePage> {
     final allUsers = ref.watch(allUsersProvider);
     final filteredUsers = _searchQuery.isEmpty
         ? allUsers
-        : allUsers.where((u) => u.name.toLowerCase().contains(_searchQuery.toLowerCase()) || u.email.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+        : allUsers.where((u) =>
+    u.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+        u.email.toLowerCase().contains(_searchQuery.toLowerCase())
+    ).toList();
 
     return Scaffold(
       backgroundColor: backgroundColor,
@@ -67,6 +80,7 @@ class _NewMessagePageState extends ConsumerState<NewMessagePage> {
         maxWidth: 700,
         child: Column(
           children: [
+            // Search Bar
             Padding(
               padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
               child: Container(
@@ -76,6 +90,7 @@ class _NewMessagePageState extends ConsumerState<NewMessagePage> {
                 ),
                 child: TextField(
                   controller: _searchController,
+                  autofocus: isDesktop, // Focus on desktop for quick typing
                   onChanged: (val) => setState(() => _searchQuery = val),
                   style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16)),
                   decoration: InputDecoration(
@@ -89,6 +104,7 @@ class _NewMessagePageState extends ConsumerState<NewMessagePage> {
               ),
             ),
 
+            // Create Group Option
             InkWell(
               onTap: () {
                 Navigator.pushReplacement(
@@ -101,16 +117,15 @@ class _NewMessagePageState extends ConsumerState<NewMessagePage> {
                 child: Row(
                   children: [
                     Container(
-                      width: 50.w,
-                      height: 50.h,
-                      constraints: const BoxConstraints(maxHeight: 50, maxWidth: 50),
+                      width: 48.w,
+                      height: 48.w, // Square dimensions for circle
                       decoration: const BoxDecoration(
                         color: Color(0xFF1A60FF),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(Icons.group_add, color: Colors.white, size: Responsive.fontSize(context, 24)),
                     ),
-                    SizedBox(width: 12.w),
+                    SizedBox(width: 16.w),
                     Text(
                       "Create New Group",
                       style: TextStyle(
@@ -126,50 +141,71 @@ class _NewMessagePageState extends ConsumerState<NewMessagePage> {
 
             Divider(height: 1, thickness: 0.5, color: isDark ? Colors.grey[800] : Colors.grey[300]),
 
+            // User List
             Expanded(
-              child: ListView.builder(
-                itemCount: filteredUsers.length,
-                itemBuilder: (context, index) {
-                  final user = filteredUsers[index];
-                  return ListTile(
-                    contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 4.h),
-                    leading: CircleAvatar(
-                      backgroundColor: isDark ? Colors.grey[700] : Colors.grey[300],
-                      radius: Responsive.radius(context, 25),
-                      child: Text(
-                        user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
+              child: filteredUsers.isEmpty
+                  ? Center(
+                child: Text(
+                  "No users found",
+                  style: TextStyle(color: hintColor, fontSize: 16.sp),
+                ),
+              )
+                  : Scrollbar(
+                thumbVisibility: isDesktop,
+                child: ListView.builder(
+                  itemCount: filteredUsers.length,
+                  itemBuilder: (context, index) {
+                    final user = filteredUsers[index];
+                    return ListTile(
+                      contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 6.h),
+                      leading: CircleAvatar(
+                        backgroundColor: _getUserColor(user.name),
+                        radius: Responsive.radius(context, 24),
+                        child: Text(
+                          user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: Responsive.fontSize(context, 18)),
+                        ),
+                      ),
+                      title: Text(
+                        user.name,
                         style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: Responsive.fontSize(context, 18)),
+                            fontWeight: FontWeight.w600,
+                            fontSize: Responsive.fontSize(context, 16),
+                            color: textColor
+                        ),
                       ),
-                    ),
-                    title: Text(
-                      user.name,
-                      style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: Responsive.fontSize(context, 16),
-                          color: textColor
+                      subtitle: Text(
+                        user.email,
+                        style: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14)),
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                    subtitle: Text(user.email, style: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14))),
-                    onTap: () async {
-                      // Use repo method
-                      final chat = await ref.read(chatRepositoryProvider).startPrivateChat(user);
+                      onTap: () async {
+                        // Use repo method to find or create chat
+                        final chat = await ref.read(chatRepositoryProvider).startPrivateChat(user);
 
-                      if (mounted) {
-                        if (isDesktop) {
-                          Navigator.pop(context);
-                        } else {
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(builder: (context) => ChatPage(chat: chat)),
-                          );
+                        if (mounted) {
+                          if (isDesktop) {
+                            // On desktop, we likely want to just close this modal and
+                            // let the main layout select the chat.
+                            // However, since this page is pushed, we pop it.
+                            Navigator.pop(context);
+                            // NOTE: In a split view, you might want to signal the Home Page to select this chat.
+                            // But since startPrivateChat updates the provider, the HomePage list will update.
+                          } else {
+                            // On mobile, replace this page with the chat page
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(builder: (context) => ChatPage(chat: chat)),
+                            );
+                          }
                         }
-                      }
-                    },
-                  );
-                },
+                      },
+                    );
+                  },
+                ),
               ),
             ),
           ],

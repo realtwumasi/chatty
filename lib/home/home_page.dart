@@ -21,7 +21,9 @@ class HomePage extends ConsumerStatefulWidget {
 
 class _HomePageState extends ConsumerState<HomePage> {
   Chat? _selectedChat;
-  final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController(); // Added ScrollController
+  String _searchQuery = "";
 
   @override
   void initState() {
@@ -32,7 +34,8 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   @override
   void dispose() {
-    _scrollController.dispose();
+    _searchController.dispose();
+    _scrollController.dispose(); // Dispose ScrollController
     super.dispose();
   }
 
@@ -105,15 +108,54 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   Widget _buildConnectionBanner(bool isConnected) {
-    if (isConnected) return const SizedBox.shrink();
-    return Container(
-      width: double.infinity,
-      color: Colors.redAccent,
-      padding: EdgeInsets.symmetric(vertical: 4.h),
-      child: Center(
-        child: Text(
-          "No Connection - Using Offline Data",
-          style: TextStyle(color: Colors.white, fontSize: 12.sp, fontWeight: FontWeight.bold),
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 300),
+      child: isConnected
+          ? const SizedBox(width: double.infinity)
+          : Container(
+        width: double.infinity,
+        color: Colors.redAccent.shade700,
+        padding: EdgeInsets.symmetric(vertical: 6.h),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.wifi_off, color: Colors.white, size: 14.sp),
+            SizedBox(width: 8.w),
+            Text(
+              "Waiting for connection...",
+              style: TextStyle(color: Colors.white, fontSize: 12.sp, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchBar(bool isDark, Color inputColor) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+      child: Container(
+        decoration: BoxDecoration(
+          color: inputColor,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: TextField(
+          controller: _searchController,
+          onChanged: (value) => setState(() => _searchQuery = value),
+          style: TextStyle(fontSize: 14.sp),
+          decoration: InputDecoration(
+              hintText: "Search conversations...",
+              hintStyle: TextStyle(color: Colors.grey, fontSize: 14.sp),
+              prefixIcon: const Icon(Icons.search, color: Colors.grey),
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(vertical: 12.h),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(icon: const Icon(Icons.clear, color: Colors.grey), onPressed: () {
+                _searchController.clear();
+                setState(() => _searchQuery = "");
+              })
+                  : null
+          ),
         ),
       ),
     );
@@ -123,6 +165,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
     final textColor = Theme.of(context).colorScheme.onSurface;
+    final inputColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
 
     return Scaffold(
       backgroundColor: backgroundColor,
@@ -132,6 +175,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       body: Column(
         children: [
           _buildConnectionBanner(isConnected),
+          _buildSearchBar(isDark, inputColor!),
           Expanded(
             child: RefreshIndicator(
               onRefresh: _handleRefresh,
@@ -148,12 +192,14 @@ class _HomePageState extends ConsumerState<HomePage> {
     final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
     final textColor = Theme.of(context).colorScheme.onSurface;
     final borderColor = isDark ? Colors.grey[800]! : Colors.grey[300]!;
+    final inputColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
 
     final chatList = ref.watch(chatListProvider);
-    // Find the latest version of the selected chat to ensure messages update in real-time
-    Chat? activeChat = _selectedChat;
     if (_selectedChat != null) {
-      activeChat = chatList.where((c) => c.id == _selectedChat!.id).firstOrNull ?? _selectedChat;
+      final updated = chatList.where((c) => c.id == _selectedChat!.id).firstOrNull;
+      if (updated != null && updated != _selectedChat) {
+        _selectedChat = updated;
+      }
     }
 
     return Scaffold(
@@ -169,6 +215,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                   child: Column(
                     children: [
                       _buildAppBar(textColor, isDark, isDesktop: true),
+                      _buildSearchBar(isDark, inputColor!),
                       Expanded(child: _buildChatList(isDesktop: true)),
                       Divider(height: 1, color: borderColor),
                       _buildCompactUserProfile(isDark, textColor),
@@ -177,10 +224,10 @@ class _HomePageState extends ConsumerState<HomePage> {
                 ),
                 VerticalDivider(width: 1, color: borderColor),
                 Expanded(
-                  child: activeChat != null
-                      ? (activeChat.isGroup
-                      ? GroupChatPage(key: ValueKey(activeChat.id), chat: activeChat, isDesktop: true)
-                      : ChatPage(key: ValueKey(activeChat.id), chat: activeChat, isDesktop: true))
+                  child: _selectedChat != null
+                      ? (_selectedChat!.isGroup
+                      ? GroupChatPage(key: ValueKey(_selectedChat!.id), chat: _selectedChat!, isDesktop: true)
+                      : ChatPage(key: ValueKey(_selectedChat!.id), chat: _selectedChat!, isDesktop: true))
                       : _buildEmptyDesktopState(isDark, textColor),
                 ),
               ],
@@ -252,20 +299,25 @@ class _HomePageState extends ConsumerState<HomePage> {
     final chats = ref.watch(chatListProvider);
     final isLoading = ref.watch(isLoadingProvider);
 
-    if (chats.isEmpty) {
-      if (isLoading) return const Center(child: CircularProgressIndicator());
+    // Filter chats based on search query
+    final filteredChats = _searchQuery.isEmpty
+        ? chats
+        : chats.where((c) => c.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+
+    if (filteredChats.isEmpty) {
+      if (isLoading && chats.isEmpty) return const Center(child: CircularProgressIndicator());
+      if (_searchQuery.isNotEmpty) return const Center(child: Text("No chats found"));
       return Center(child: Text("No chats yet", style: TextStyle(color: Colors.grey[400])));
     }
 
-    // Optimization: Add Scrollbar for desktop
     return Scrollbar(
       controller: _scrollController,
-      thumbVisibility: isDesktop, // Always show on desktop
+      thumbVisibility: isDesktop,
       child: ListView.builder(
-        controller: _scrollController,
-        itemCount: chats.length,
+        controller: _scrollController, // Link controller to ListView
+        itemCount: filteredChats.length,
         itemBuilder: (context, index) {
-          final chat = chats[index];
+          final chat = filteredChats[index];
           return MessageTile(
             chat: chat,
             isSelected: _selectedChat?.id == chat.id,
