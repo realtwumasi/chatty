@@ -131,7 +131,7 @@ class ChatRepository {
       final newChatList = List<Chat>.from(chats);
       newChatList[index] = updatedChat;
       _ref.read(chatListProvider.notifier).state = newChatList;
-      _saveChatsToLocal();
+      saveChatsToLocal(immediate: true); // Save immediately on read
 
       _sendReadReceipt(chats[index]);
     }
@@ -212,12 +212,13 @@ class ChatRepository {
       final msgIndex = chat.messages.indexWhere((m) => m.id == messageId);
 
       if (msgIndex != -1) {
-        // Optimizing read receipts: Mark all older messages as read too
+        // Waterfall Update: Mark this and all prior sent messages as read
         final newMessages = List<Message>.from(chat.messages);
         bool hasUpdates = false;
 
         for (int j = 0; j <= msgIndex; j++) {
           final msg = newMessages[j];
+          // Update only if it's my message and not already read
           if (msg.isMe && msg.status != MessageStatus.read) {
             newMessages[j] = Message(
               id: msg.id,
@@ -250,7 +251,7 @@ class ChatRepository {
 
         Future.microtask(() {
           _ref.read(chatListProvider.notifier).state = newChatList;
-          _saveChatsToLocal();
+          saveChatsToLocal();
         });
 
         break;
@@ -301,7 +302,7 @@ class ChatRepository {
 
         Future.microtask(() {
           _ref.read(chatListProvider.notifier).state = [newChat, ...chats];
-          _saveChatsToLocal();
+          saveChatsToLocal();
         });
         return;
       }
@@ -318,14 +319,8 @@ class ChatRepository {
         return true;
       }).toList();
 
-      // Optimization: Simple append if new message is newer, else sort
-      final updatedMessages = List<Message>.from(filteredMessages);
-      if (updatedMessages.isEmpty || newMessage.timestamp.isAfter(updatedMessages.last.timestamp)) {
-        updatedMessages.add(newMessage);
-      } else {
-        updatedMessages.add(newMessage);
-        updatedMessages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-      }
+      final updatedMessages = [...filteredMessages, newMessage];
+      updatedMessages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
       final bool isActive = _activeChatId == currentChat.id;
       final int newUnreadCount = isActive
@@ -352,7 +347,7 @@ class ChatRepository {
 
       Future.microtask(() {
         _ref.read(chatListProvider.notifier).state = newChatList;
-        _saveChatsToLocal();
+        saveChatsToLocal();
       });
     }
   }
@@ -465,16 +460,15 @@ class ChatRepository {
       newChatList[chatIndex] = updatedChat;
       Future.microtask(() {
         _ref.read(chatListProvider.notifier).state = newChatList;
-        _saveChatsToLocal();
+        saveChatsToLocal();
       });
     }
   }
 
-  // Optimized: Debounce saves to prevent disk thrashing on bursts
-  void _saveChatsToLocal() {
+  void saveChatsToLocal({bool immediate = false}) {
     if (_saveDebounce?.isActive ?? false) _saveDebounce!.cancel();
 
-    _saveDebounce = Timer(const Duration(seconds: 2), () {
+    void persist() {
       final chats = _ref.read(chatListProvider);
       SharedPreferences.getInstance().then((prefs) {
         try {
@@ -484,7 +478,13 @@ class ChatRepository {
           if (kDebugMode) print("Error saving local chats: $e");
         }
       });
-    });
+    }
+
+    if (immediate) {
+      persist();
+    } else {
+      _saveDebounce = Timer(const Duration(seconds: 2), persist);
+    }
   }
 
   // --- Actions ---
@@ -626,7 +626,7 @@ class ChatRepository {
       });
 
       _ref.read(chatListProvider.notifier).state = sortedChats;
-      _saveChatsToLocal();
+      saveChatsToLocal();
     } catch (e) {
       if (kDebugMode) print("Fetch chats error: $e");
     }
@@ -745,18 +745,34 @@ class ChatRepository {
         final newMsgs = data.map((e) => Message.fromJson(e, currentUser.id)).toList();
         newMsgs.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
+        // SMART MERGE: Check local messages to preserve 'read' status
         final currentMessages = chats[chatIndex].messages;
-        final localOnlyMessages = currentMessages.where((m) =>
-        m.status == MessageStatus.sending || m.status == MessageStatus.failed || m.isSystem
-        ).toList();
+        final mergedMessages = <Message>[];
 
-        final finalMessages = [...newMsgs];
-        for (var local in localOnlyMessages) {
-          if (!finalMessages.any((m) => m.id == local.id)) {
-            finalMessages.add(local);
+        final localMsgMap = {for (var m in currentMessages) m.id: m};
+
+        for (var newMsg in newMsgs) {
+          if (localMsgMap.containsKey(newMsg.id)) {
+            final local = localMsgMap[newMsg.id]!;
+            // If local is 'read' but server says 'delivered', trust local
+            if (local.status == MessageStatus.read && newMsg.status != MessageStatus.read) {
+              mergedMessages.add(local);
+            } else {
+              mergedMessages.add(newMsg);
+            }
+          } else {
+            mergedMessages.add(newMsg);
           }
         }
-        finalMessages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+        // Add pending messages not in server response yet
+        final pending = currentMessages.where((m) =>
+        !mergedMessages.any((merged) => merged.id == m.id) &&
+            (m.status == MessageStatus.sending || m.status == MessageStatus.failed || m.isSystem)
+        ).toList();
+
+        mergedMessages.addAll(pending);
+        mergedMessages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
         final updatedChat = Chat(
           id: chats[chatIndex].id,
@@ -765,13 +781,13 @@ class ChatRepository {
           participants: chats[chatIndex].participants,
           unreadCount: 0,
           eventLog: chats[chatIndex].eventLog,
-          messages: finalMessages,
+          messages: mergedMessages,
         );
 
         final newChatList = List<Chat>.from(chats);
         newChatList[chatIndex] = updatedChat;
         _ref.read(chatListProvider.notifier).state = newChatList;
-        _saveChatsToLocal();
+        saveChatsToLocal();
       }
     } catch (e) {
       if (kDebugMode) print("Fetch messages error: $e");
@@ -802,7 +818,7 @@ class ChatRepository {
         final newChatList = List<Chat>.from(chats);
         newChatList[chatIndex] = updatedChat;
         _ref.read(chatListProvider.notifier).state = newChatList;
-        _saveChatsToLocal();
+        saveChatsToLocal();
       }
     } catch (e) {
       if (kDebugMode) print("Fetch group members error: $e");
@@ -838,7 +854,7 @@ class ChatRepository {
         participants: [currentUser, otherUser],
       );
       _ref.read(chatListProvider.notifier).state = [newChat, ...chats];
-      _saveChatsToLocal();
+      saveChatsToLocal();
       return newChat;
     }
   }
@@ -906,7 +922,7 @@ class ChatRepository {
       newChatList.removeAt(chatIndex);
       newChatList.insert(0, updatedChat);
       _ref.read(chatListProvider.notifier).state = newChatList;
-      _saveChatsToLocal();
+      saveChatsToLocal();
     }
 
     try {
@@ -932,7 +948,7 @@ class ChatRepository {
             final newChatList = List<Chat>.from(currentChats);
             newChatList[currentIndex] = failedChat;
             _ref.read(chatListProvider.notifier).state = newChatList;
-            _saveChatsToLocal();
+            saveChatsToLocal();
           }
         }
       }
@@ -952,7 +968,7 @@ class ChatRepository {
 
       final currentChats = _ref.read(chatListProvider);
       _ref.read(chatListProvider.notifier).state = [newChat, ...currentChats];
-      _saveChatsToLocal();
+      saveChatsToLocal();
       _ws.subscribeToGroup(newChat.id);
 
       return newChat;
@@ -976,7 +992,7 @@ class ChatRepository {
     final chats = _ref.read(chatListProvider);
     final newChats = chats.where((c) => c.id != chatId).toList();
     _ref.read(chatListProvider.notifier).state = newChats;
-    _saveChatsToLocal();
+    saveChatsToLocal();
     _ws.unsubscribeFromGroup(chatId);
     _api.post('/groups/$chatId/leave/', {});
   }
