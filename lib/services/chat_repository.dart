@@ -240,8 +240,10 @@ class ChatRepository {
 
     if (chatIndex != -1) {
       final currentChat = chats[chatIndex];
+      // Dedupe
       if (currentChat.messages.any((m) => m.id == newMessage.id)) return;
 
+      // Filter out temp 'sending' messages
       final filteredMessages = currentChat.messages.where((m) {
         if (m.isMe && m.status == MessageStatus.sending && m.text == newMessage.text) {
           return false;
@@ -273,7 +275,7 @@ class ChatRepository {
 
       final newChatList = List<Chat>.from(chats);
       newChatList.removeAt(chatIndex);
-      newChatList.insert(0, updatedChat);
+      newChatList.insert(0, updatedChat); // Bump to top
 
       Future.microtask(() {
         _ref.read(chatListProvider.notifier).state = newChatList;
@@ -339,51 +341,21 @@ class ChatRepository {
     }
   }
 
+  // --- Handlers for Join/Leave/Remove ---
+
   void _handleUserJoined(Map<String, dynamic> payload) {
-    _updateGroupMembership(payload, true);
+    _updateGroupMembership(payload, "has been added to the group", true);
   }
 
   void _handleUserLeft(Map<String, dynamic> payload) {
-    _updateGroupMembership(payload, false);
+    _updateGroupMembership(payload, "left the group", false);
   }
 
   void _handleUserRemoved(Map<String, dynamic> payload) {
-    final groupId = payload['group_id']?.toString();
-    final userId = payload['user_id']?.toString();
-    final username = payload['username'];
-
-    if (groupId == null || userId == null) return;
-
-    final chats = _ref.read(chatListProvider);
-    final chatIndex = chats.indexWhere((c) => c.id == groupId);
-
-    if (chatIndex != -1) {
-      final currentChat = chats[chatIndex];
-      final sysMsg = _createSystemMessage("$username was removed from the group");
-
-      List<User> newParticipants = List<User>.from(currentChat.participants);
-      newParticipants.removeWhere((u) => u.id == userId);
-
-      final updatedChat = Chat(
-        id: currentChat.id,
-        name: currentChat.name,
-        isGroup: currentChat.isGroup,
-        participants: newParticipants,
-        messages: [...currentChat.messages, sysMsg],
-        unreadCount: currentChat.unreadCount,
-        eventLog: currentChat.eventLog,
-      );
-
-      final newChatList = List<Chat>.from(chats);
-      newChatList[chatIndex] = updatedChat;
-      Future.microtask(() {
-        _ref.read(chatListProvider.notifier).state = newChatList;
-        _saveChatsToLocal();
-      });
-    }
+    _updateGroupMembership(payload, "has been removed from the group", false);
   }
 
-  void _updateGroupMembership(Map<String, dynamic> payload, bool isJoin) {
+  void _updateGroupMembership(Map<String, dynamic> payload, String actionText, bool isJoin) {
     final groupId = payload['group_id']?.toString();
     final userId = payload['user_id']?.toString();
     final username = payload['username'];
@@ -395,7 +367,7 @@ class ChatRepository {
 
     if (chatIndex != -1) {
       final currentChat = chats[chatIndex];
-      final sysMsg = _createSystemMessage("$username ${isJoin ? 'joined' : 'left'} the group");
+      final sysMsg = _createSystemMessage("$username $actionText");
 
       List<User> newParticipants = List<User>.from(currentChat.participants);
       if (isJoin) {
@@ -412,7 +384,7 @@ class ChatRepository {
         isGroup: currentChat.isGroup,
         participants: newParticipants,
         messages: [...currentChat.messages, sysMsg],
-        unreadCount: currentChat.unreadCount,
+        unreadCount: _activeChatId == currentChat.id ? 0 : currentChat.unreadCount + 1,
         eventLog: currentChat.eventLog,
       );
 
@@ -886,9 +858,9 @@ class ChatRepository {
 
   Future<void> addMemberToGroup(String groupId, String userId) async {
     try {
-      // Changed to standard REST resource pattern
       await _api.post('/groups/$groupId/members/', {'user_id': userId});
-      fetchGroupMembers(groupId);
+      // Force fetch to ensure UI is in sync immediately
+      await fetchGroupMembers(groupId);
     } catch (e) {
       rethrow;
     }
@@ -896,19 +868,9 @@ class ChatRepository {
 
   Future<void> removeMemberFromGroup(String groupId, String userId) async {
     try {
-      // Changed to use POST with specific action-like payload if DELETE isn't available
-      // or if your backend specifically uses POST for removal (common in some setups).
-      // Given the 404 on `remove_member`, let's try the resource deletion or `remove_member` if it was just the path.
-      // But standard REST is DELETE /groups/{id}/members/{userId}/
-      // Since I can't confirm backend, I'll stick to a safer POST path if available or revert to previous with better error handling in UI.
-      // Let's assume the standard sub-resource pattern which is more likely to exist.
-      // HOWEVER, `api_service` doesn't expose DELETE helper easily in my previous code.
-      // I will assume POST to a /members/remove/ style or similar if generic REST failed.
-      // Let's retry the original `remove_member` but the UI will now catch it.
-      // Actually, if the backend uses ViewSets, it might be `POST /groups/{id}/remove_member/`
-      // If that failed (404), then maybe `POST /groups/{id}/members/` with `action: remove`?
-      // Since I am blind to backend code, I will keep `remove_member` but rely on UI error handling.
       await _api.post('/groups/$groupId/remove_member/', {'user_id': userId});
+      // Force fetch to ensure UI is in sync immediately
+      await fetchGroupMembers(groupId);
     } catch (e) {
       rethrow;
     }

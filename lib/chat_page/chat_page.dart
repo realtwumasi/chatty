@@ -37,8 +37,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     _chatId = widget.chat.id;
     _repository = ref.read(chatRepositoryProvider);
 
-    _repository.enterChat(_chatId);
-    _repository.fetchMessagesForChat(_chatId, false);
+    // FIX: Wrap state modifications in microtask to avoid build-time errors
+    Future.microtask(() {
+      _repository.enterChat(_chatId);
+      _repository.fetchMessagesForChat(_chatId, false);
+    });
 
     SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
   }
@@ -47,10 +50,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   void didUpdateWidget(ChatPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.chat.id != widget.chat.id) {
-      _repository.leaveChat();
-      _chatId = widget.chat.id;
-      _repository.enterChat(_chatId);
-      _repository.fetchMessagesForChat(_chatId, false);
+      // FIX: Handle chat switching safely
+      Future.microtask(() {
+        _repository.leaveChat(); // Leave old
+        _chatId = widget.chat.id;
+        _repository.enterChat(_chatId); // Enter new
+        _repository.fetchMessagesForChat(_chatId, false);
+      });
       _messageController.clear();
     }
   }
@@ -68,7 +74,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   void _onTextChanged(String text) {
     if (_typingDebounce?.isActive ?? false) _typingDebounce!.cancel();
 
-    // Safe to use ref.read for user interaction
     ref.read(chatRepositoryProvider).sendTyping(_chatId, false, true);
 
     _typingDebounce = Timer(const Duration(seconds: 2), () {

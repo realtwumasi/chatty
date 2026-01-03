@@ -36,8 +36,11 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
     _chatId = widget.chat.id;
     _repository = ref.read(chatRepositoryProvider);
 
-    _repository.enterChat(_chatId);
-    _repository.fetchMessagesForChat(_chatId, true);
+    // FIX: Wrap state modifications in microtask
+    Future.microtask(() {
+      _repository.enterChat(_chatId);
+      _repository.fetchMessagesForChat(_chatId, true);
+    });
 
     SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
   }
@@ -46,10 +49,13 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   void didUpdateWidget(GroupChatPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.chat.id != widget.chat.id) {
-      _repository.leaveChat();
-      _chatId = widget.chat.id;
-      _repository.enterChat(_chatId);
-      _repository.fetchMessagesForChat(_chatId, true);
+      // FIX: Wrap state modifications in microtask
+      Future.microtask(() {
+        _repository.leaveChat();
+        _chatId = widget.chat.id;
+        _repository.enterChat(_chatId);
+        _repository.fetchMessagesForChat(_chatId, true);
+      });
       _messageController.clear();
     }
   }
