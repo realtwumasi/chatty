@@ -59,6 +59,7 @@ class ChatRepository {
         } catch (_) {}
       }
 
+      // Load Local Chats (Persistent Offline Access)
       final chatsJson = prefs.getString(_keyChats);
       if (chatsJson != null) {
         try {
@@ -89,6 +90,7 @@ class ChatRepository {
       }
     }
 
+    // Background sync
     try {
       await Future.wait([
         fetchUsers(),
@@ -240,10 +242,8 @@ class ChatRepository {
 
     if (chatIndex != -1) {
       final currentChat = chats[chatIndex];
-      // Dedupe
       if (currentChat.messages.any((m) => m.id == newMessage.id)) return;
 
-      // Filter out temp 'sending' messages
       final filteredMessages = currentChat.messages.where((m) {
         if (m.isMe && m.status == MessageStatus.sending && m.text == newMessage.text) {
           return false;
@@ -275,7 +275,7 @@ class ChatRepository {
 
       final newChatList = List<Chat>.from(chats);
       newChatList.removeAt(chatIndex);
-      newChatList.insert(0, updatedChat); // Bump to top
+      newChatList.insert(0, updatedChat);
 
       Future.microtask(() {
         _ref.read(chatListProvider.notifier).state = newChatList;
@@ -341,8 +341,6 @@ class ChatRepository {
     }
   }
 
-  // --- Handlers for Join/Leave/Remove ---
-
   void _handleUserJoined(Map<String, dynamic> payload) {
     _updateGroupMembership(payload, "has been added to the group", true);
   }
@@ -384,7 +382,7 @@ class ChatRepository {
         isGroup: currentChat.isGroup,
         participants: newParticipants,
         messages: [...currentChat.messages, sysMsg],
-        unreadCount: _activeChatId == currentChat.id ? 0 : currentChat.unreadCount + 1,
+        unreadCount: currentChat.unreadCount,
         eventLog: currentChat.eventLog,
       );
 
@@ -489,49 +487,111 @@ class ChatRepository {
     }
   }
 
+  // --- Optimized Fetch with Group History ---
   Future<void> fetchChats() async {
     try {
+      // 1. Fetch Groups Metadata
       final response = await _api.get('/groups/');
       final List groupData = (response is Map && response.containsKey('results')) ? response['results'] : [];
       final fetchedGroups = groupData.map((e) => Chat.fromGroupJson(e)).toList();
 
-      final privateChats = await _fetchPrivateChatsFromHistory();
+      // 2. Fetch Histories in Parallel
+      final results = await Future.wait([
+        _fetchPrivateChatsFromHistory(),
+        _fetchRecentGroupMessages()
+      ]);
+
+      final privateChats = results[0] as List<Chat>;
+      final groupMessagesMap = results[1] as Map<String, List<Message>>;
 
       final currentChats = _ref.read(chatListProvider);
       final mergedMap = <String, Chat>{};
 
+      // Add Private Chats
       for (var chat in privateChats) {
         mergedMap[chat.id] = chat;
       }
 
+      // Add/Update Groups
       for (var group in fetchedGroups) {
         final local = currentChats.where((c) => c.id == group.id).firstOrNull;
-        if (local != null) {
-          mergedMap[group.id] = Chat(
-            id: group.id,
-            name: group.name,
-            isGroup: group.isGroup,
-            messages: local.messages,
-            participants: local.participants.isEmpty ? group.participants : local.participants,
-            unreadCount: local.unreadCount,
-            eventLog: local.eventLog,
-          );
-        } else {
-          mergedMap[group.id] = group;
+
+        List<Message> messages = [];
+        if (local != null) messages = List.from(local.messages);
+
+        // Merge fetched history
+        if (groupMessagesMap.containsKey(group.id)) {
+          final fetchedMsgs = groupMessagesMap[group.id]!;
+          for (var m in fetchedMsgs) {
+            if (!messages.any((exist) => exist.id == m.id)) {
+              messages.add(m);
+            }
+          }
+          messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
         }
+
+        mergedMap[group.id] = Chat(
+          id: group.id,
+          name: group.name,
+          isGroup: group.isGroup,
+          messages: messages,
+          participants: local?.participants.isNotEmpty == true ? local!.participants : group.participants,
+          unreadCount: local?.unreadCount ?? 0,
+          eventLog: local?.eventLog ?? [],
+        );
+
         if (_ws.isConnected.value) _ws.subscribeToGroup(group.id);
       }
 
+      // Keep local-only chats (e.g. pending ones)
       for (var local in currentChats) {
         if (!mergedMap.containsKey(local.id)) {
-          mergedMap[local.id] = local;
+          // If it's a private chat not in history, keep it
+          if (!local.isGroup) mergedMap[local.id] = local;
         }
       }
 
-      _ref.read(chatListProvider.notifier).state = mergedMap.values.toList();
+      final sortedChats = mergedMap.values.toList();
+      sortedChats.sort((a, b) {
+        final aTime = a.messages.isNotEmpty ? a.messages.last.timestamp : DateTime(1970);
+        final bTime = b.messages.isNotEmpty ? b.messages.last.timestamp : DateTime(1970);
+        return bTime.compareTo(aTime);
+      });
+
+      _ref.read(chatListProvider.notifier).state = sortedChats;
       _saveChatsToLocal();
     } catch (e) {
       if (kDebugMode) print("Fetch chats error: $e");
+    }
+  }
+
+  Future<Map<String, List<Message>>> _fetchRecentGroupMessages() async {
+    try {
+      final response = await _api.get('/messages/', params: {
+        'message_type': 'group',
+        'page_size': '200'
+      });
+
+      final List data = (response is Map && response.containsKey('results')) ? response['results'] : [];
+      final currentUser = _ref.read(userProvider);
+      if (currentUser == null) return {};
+
+      final Map<String, List<Message>> msgsByGroup = {};
+
+      for (var msgJson in data) {
+        final msg = Message.fromJson(msgJson, currentUser.id);
+        final groupId = msgJson['group']?.toString();
+        if (groupId != null) {
+          if (!msgsByGroup.containsKey(groupId)) {
+            msgsByGroup[groupId] = [];
+          }
+          msgsByGroup[groupId]!.add(msg);
+        }
+      }
+      return msgsByGroup;
+    } catch (e) {
+      if (kDebugMode) print("Group history fetch error: $e");
+      return {};
     }
   }
 
@@ -854,12 +914,9 @@ class ChatRepository {
     _api.post('/groups/$chatId/leave/', {});
   }
 
-  // --- Add/Remove Members ---
-
   Future<void> addMemberToGroup(String groupId, String userId) async {
     try {
       await _api.post('/groups/$groupId/members/', {'user_id': userId});
-      // Force fetch to ensure UI is in sync immediately
       await fetchGroupMembers(groupId);
     } catch (e) {
       rethrow;
@@ -869,7 +926,6 @@ class ChatRepository {
   Future<void> removeMemberFromGroup(String groupId, String userId) async {
     try {
       await _api.post('/groups/$groupId/remove_member/', {'user_id': userId});
-      // Force fetch to ensure UI is in sync immediately
       await fetchGroupMembers(groupId);
     } catch (e) {
       rethrow;
