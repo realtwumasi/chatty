@@ -36,7 +36,6 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
     _chatId = widget.chat.id;
     _repository = ref.read(chatRepositoryProvider);
 
-    // FIX: Wrap state modifications in microtask
     Future.microtask(() {
       _repository.enterChat(_chatId);
       _repository.fetchMessagesForChat(_chatId, true);
@@ -49,7 +48,6 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   void didUpdateWidget(GroupChatPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.chat.id != widget.chat.id) {
-      // FIX: Wrap state modifications in microtask
       Future.microtask(() {
         _repository.leaveChat();
         _chatId = widget.chat.id;
@@ -109,14 +107,14 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
     });
   }
 
-  void _showGroupInfo(Chat currentChat) {
+  void _showGroupInfo(String chatId) {
     if (Responsive.isDesktop(context)) {
       showDialog(
         context: context,
         builder: (context) => Dialog(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 400),
-            child: SingleChildScrollView(child: _GroupInfoContent(chat: currentChat)),
+            child: SingleChildScrollView(child: _GroupInfoContent(chatId: chatId)),
           ),
         ),
       );
@@ -128,7 +126,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
           initialChildSize: 0.6,
           maxChildSize: 0.9,
           expand: false,
-          builder: (_, c) => SingleChildScrollView(controller: c, child: _GroupInfoContent(chat: currentChat)),
+          builder: (_, c) => SingleChildScrollView(controller: c, child: _GroupInfoContent(chatId: chatId)),
         ),
       );
     }
@@ -167,7 +165,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
           onPressed: () => Navigator.pop(context),
         ),
         title: InkWell(
-          onTap: () => _showGroupInfo(currentChat),
+          onTap: () => _showGroupInfo(_chatId),
           child: Row(
             children: [
               CircleAvatar(
@@ -193,7 +191,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
           ),
         ),
         actions: [
-          IconButton(icon: Icon(Icons.more_vert, color: textColor), onPressed: () => _showGroupInfo(currentChat)),
+          IconButton(icon: Icon(Icons.more_vert, color: textColor), onPressed: () => _showGroupInfo(_chatId)),
         ],
       ),
       body: Column(
@@ -339,9 +337,11 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                               const SizedBox(width: 4),
                               Icon(
                                 message.status == MessageStatus.sending ? Icons.access_time :
-                                message.status == MessageStatus.failed ? Icons.error : Icons.done_all,
+                                (message.status == MessageStatus.read
+                                    ? Icons.done_all
+                                    : (message.status == MessageStatus.failed ? Icons.error : Icons.done)),
                                 size: 12,
-                                color: timeColor,
+                                color: message.status == MessageStatus.read ? Colors.lightBlueAccent : timeColor,
                               ),
                             ]
                           ],
@@ -360,14 +360,18 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
 }
 
 class _GroupInfoContent extends ConsumerWidget {
-  final Chat chat;
-  const _GroupInfoContent({required this.chat});
+  final String chatId;
+  const _GroupInfoContent({required this.chatId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final textColor = Theme.of(context).colorScheme.onSurface;
     final repo = ref.read(chatRepositoryProvider);
     final currentUser = ref.watch(userProvider);
+    final chatList = ref.watch(chatListProvider);
+
+    // Find the chat object dynamically so UI updates when members change
+    final chat = chatList.firstWhere((c) => c.id == chatId, orElse: () => Chat(id: chatId, name: 'Unknown', isGroup: true, messages: [], participants: []));
 
     return Padding(
       padding: const EdgeInsets.all(20.0),
@@ -411,7 +415,7 @@ class _GroupInfoContent extends ConsumerWidget {
                     } else if (value == 'remove') {
                       try {
                         await repo.removeMemberFromGroup(chat.id, user.id);
-                        if (context.mounted) Navigator.pop(context);
+                        // No manual pop here; let the list update live
                       } catch (e) {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed to remove: $e")));

@@ -37,7 +37,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     _chatId = widget.chat.id;
     _repository = ref.read(chatRepositoryProvider);
 
-    // FIX: Wrap state modifications in microtask to avoid build-time errors
     Future.microtask(() {
       _repository.enterChat(_chatId);
       _repository.fetchMessagesForChat(_chatId, false);
@@ -50,11 +49,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   void didUpdateWidget(ChatPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.chat.id != widget.chat.id) {
-      // FIX: Handle chat switching safely
       Future.microtask(() {
-        _repository.leaveChat(); // Leave old
+        _repository.leaveChat();
         _chatId = widget.chat.id;
-        _repository.enterChat(_chatId); // Enter new
+        _repository.enterChat(_chatId);
         _repository.fetchMessagesForChat(_chatId, false);
       });
       _messageController.clear();
@@ -63,7 +61,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   @override
   void dispose() {
-    // Use captured reference
     _repository.leaveChat();
     _typingDebounce?.cancel();
     _messageController.dispose();
@@ -282,8 +279,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                       const SizedBox(width: 4),
                       Icon(
                           message.status == MessageStatus.sending ? Icons.access_time :
-                          message.status == MessageStatus.failed ? Icons.error : Icons.done,
-                          size: 12, color: Colors.white70
+                          (message.status == MessageStatus.read
+                              ? Icons.done_all
+                              : (message.status == MessageStatus.failed ? Icons.error : Icons.done)),
+                          size: 14,
+                          color: message.status == MessageStatus.read ? Colors.lightBlueAccent : Colors.white70
                       )
                     ]
                   ],
