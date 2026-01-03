@@ -22,8 +22,9 @@ class HomePage extends ConsumerStatefulWidget {
 class _HomePageState extends ConsumerState<HomePage> {
   Chat? _selectedChat;
   final TextEditingController _searchController = TextEditingController();
-  final ScrollController _scrollController = ScrollController(); // Added ScrollController
+  final ScrollController _scrollController = ScrollController();
   String _searchQuery = "";
+  int _selectedFilterIndex = 0; // 0: All, 1: Private, 2: Group
 
   @override
   void initState() {
@@ -35,7 +36,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   void dispose() {
     _searchController.dispose();
-    _scrollController.dispose(); // Dispose ScrollController
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -161,6 +162,44 @@ class _HomePageState extends ConsumerState<HomePage> {
     );
   }
 
+  Widget _buildFilterTabs(bool isDark) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 4.h),
+      child: Row(
+        children: [
+          _filterChip("All", 0, isDark),
+          SizedBox(width: 8.w),
+          _filterChip("Private", 1, isDark),
+          SizedBox(width: 8.w),
+          _filterChip("Groups", 2, isDark),
+        ],
+      ),
+    );
+  }
+
+  Widget _filterChip(String label, int index, bool isDark) {
+    final isSelected = _selectedFilterIndex == index;
+    return InkWell(
+      onTap: () => setState(() => _selectedFilterIndex = index),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 6.h),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF1A60FF) : (isDark ? Colors.grey[800] : Colors.grey[200]),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+              color: isSelected ? Colors.white : (isDark ? Colors.grey[300] : Colors.grey[700]),
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              fontSize: 13.sp
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildMobileLayout(bool isConnected) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
@@ -176,6 +215,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         children: [
           _buildConnectionBanner(isConnected),
           _buildSearchBar(isDark, inputColor!),
+          _buildFilterTabs(isDark),
           Expanded(
             child: RefreshIndicator(
               onRefresh: _handleRefresh,
@@ -216,6 +256,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                     children: [
                       _buildAppBar(textColor, isDark, isDesktop: true),
                       _buildSearchBar(isDark, inputColor!),
+                      _buildFilterTabs(isDark),
                       Expanded(child: _buildChatList(isDesktop: true)),
                       Divider(height: 1, color: borderColor),
                       _buildCompactUserProfile(isDark, textColor),
@@ -299,12 +340,20 @@ class _HomePageState extends ConsumerState<HomePage> {
     final chats = ref.watch(chatListProvider);
     final isLoading = ref.watch(isLoadingProvider);
 
-    // Filter chats based on search query
-    final filteredChats = _searchQuery.isEmpty
-        ? chats
-        : chats.where((c) => c.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+    // 1. Filter by Tab
+    var displayChats = chats;
+    if (_selectedFilterIndex == 1) { // Private
+      displayChats = chats.where((c) => !c.isGroup).toList();
+    } else if (_selectedFilterIndex == 2) { // Group
+      displayChats = chats.where((c) => c.isGroup).toList();
+    }
 
-    if (filteredChats.isEmpty) {
+    // 2. Filter by Search Query
+    if (_searchQuery.isNotEmpty) {
+      displayChats = displayChats.where((c) => c.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+    }
+
+    if (displayChats.isEmpty) {
       if (isLoading && chats.isEmpty) return const Center(child: CircularProgressIndicator());
       if (_searchQuery.isNotEmpty) return const Center(child: Text("No chats found"));
       return Center(child: Text("No chats yet", style: TextStyle(color: Colors.grey[400])));
@@ -314,10 +363,10 @@ class _HomePageState extends ConsumerState<HomePage> {
       controller: _scrollController,
       thumbVisibility: isDesktop,
       child: ListView.builder(
-        controller: _scrollController, // Link controller to ListView
-        itemCount: filteredChats.length,
+        controller: _scrollController,
+        itemCount: displayChats.length,
         itemBuilder: (context, index) {
-          final chat = filteredChats[index];
+          final chat = displayChats[index];
           return MessageTile(
             chat: chat,
             isSelected: _selectedChat?.id == chat.id,
@@ -384,35 +433,92 @@ class _HomePageState extends ConsumerState<HomePage> {
       backgroundColor: drawerColor,
       child: Column(
         children: [
-          UserAccountsDrawerHeader(
-            decoration: const BoxDecoration(color: Color(0xFF1A60FF)),
-            currentAccountPicture: CircleAvatar(
-              backgroundColor: Colors.white,
-              child: Text(
-                currentUser.name.isNotEmpty ? currentUser.name[0] : '?',
-                style: TextStyle(fontSize: 24.sp, fontWeight: FontWeight.bold, color: const Color(0xFF1A60FF)),
+          // Custom Header
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.fromLTRB(20.w, 60.h, 20.w, 20.h),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF1A60FF), Color(0xFF003CBF)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
             ),
-            accountName: Text(currentUser.name, style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
-            accountEmail: Text(currentUser.email),
-          ),
-          ListTile(
-            leading: Icon(ref.watch(themeProvider) ? Icons.dark_mode : Icons.light_mode, color: textColor),
-            title: Text("Dark Mode", style: TextStyle(color: textColor)),
-            trailing: Switch(
-                value: ref.watch(themeProvider),
-                activeColor: const Color(0xFF1A60FF),
-                onChanged: (val) => repo.toggleTheme()
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  radius: 35.r,
+                  backgroundColor: Colors.white,
+                  child: Text(
+                    currentUser.name.isNotEmpty ? currentUser.name[0].toUpperCase() : '?',
+                    style: TextStyle(
+                      fontSize: 30.sp,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF1A60FF),
+                    ),
+                  ),
+                ),
+                SizedBox(height: 16.h),
+                Text(
+                  currentUser.name,
+                  style: TextStyle(
+                    fontSize: 22.sp,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                SizedBox(height: 4.h),
+                Text(
+                  currentUser.email,
+                  style: TextStyle(
+                    fontSize: 14.sp,
+                    color: Colors.white70,
+                  ),
+                ),
+              ],
             ),
           ),
-          const Spacer(),
-          Divider(color: isDark ? Colors.grey[800] : Colors.grey[300]),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text("Logout", style: TextStyle(color: Colors.red)),
-            onTap: _handleLogout,
+
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 8.h),
+                  child: Text("Preferences", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 12.sp)),
+                ),
+                ListTile(
+                  leading: Icon(ref.watch(themeProvider) ? Icons.dark_mode : Icons.light_mode, color: textColor),
+                  title: Text("Dark Mode", style: TextStyle(color: textColor)),
+                  trailing: Switch(
+                      value: ref.watch(themeProvider),
+                      activeColor: const Color(0xFF1A60FF),
+                      onChanged: (val) => repo.toggleTheme()
+                  ),
+                ),
+                Divider(color: isDark ? Colors.grey[800] : Colors.grey[300]),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 8.h),
+                  child: Text("Account", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 12.sp)),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.logout, color: Colors.red),
+                  title: const Text("Logout", style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+                  onTap: _handleLogout,
+                ),
+              ],
+            ),
           ),
-          SizedBox(height: 20.h),
+
+          // Footer
+          Padding(
+            padding: EdgeInsets.all(16.w),
+            child: Text(
+              "Version 1.0.0",
+              style: TextStyle(color: Colors.grey, fontSize: 12.sp),
+            ),
+          ),
         ],
       ),
     );
