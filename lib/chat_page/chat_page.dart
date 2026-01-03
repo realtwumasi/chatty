@@ -7,7 +7,6 @@ import '../model/data_models.dart';
 import '../model/responsive_helper.dart';
 import '../services/chat_repository.dart';
 
-// Strictly for Private Chats
 class ChatPage extends ConsumerStatefulWidget {
   final Chat chat;
   final bool isDesktop;
@@ -27,9 +26,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   final ScrollController _scrollController = ScrollController();
   late String _chatId;
   Timer? _typingDebounce;
-
-  // Safe reference for dispose
   late ChatRepository _repository;
+  Message? _replyingTo;
 
   @override
   void initState() {
@@ -56,6 +54,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         _repository.fetchMessagesForChat(_chatId, false);
       });
       _messageController.clear();
+      setState(() => _replyingTo = null);
     }
   }
 
@@ -83,29 +82,45 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   void _sendMessage() {
     if (_messageController.text.trim().isNotEmpty) {
       final repo = ref.read(chatRepositoryProvider);
+
+      final replyContext = _replyingTo;
+      _messageController.clear();
+      setState(() => _replyingTo = null);
+
       repo.sendMessage(
           _chatId,
           _messageController.text.trim(),
-          false // isGroup = false
+          false,
+          replyTo: replyContext
       );
-      _messageController.clear();
+
       repo.sendTyping(_chatId, false, false);
       _scrollToBottom();
     }
   }
 
+  void _onSwipeReply(Message message) {
+    setState(() {
+      _replyingTo = message;
+    });
+  }
+
   void _scrollToBottom({bool animated = true}) {
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
-        if (animated) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        } else {
-          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-        }
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (_scrollController.hasClients) {
+            if (animated) {
+              _scrollController.animateTo(
+                _scrollController.position.maxScrollExtent,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+              );
+            } else {
+              _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+            }
+          }
+        });
       }
     });
   }
@@ -189,11 +204,51 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
                 itemCount: currentChat.messages.length,
                 itemBuilder: (context, index) {
-                  return _buildMessageBubble(currentChat.messages[index], isDark);
+                  final msg = currentChat.messages[index];
+                  return GestureDetector(
+                    onLongPress: () => _onSwipeReply(msg),
+                    child: Dismissible(
+                      key: ValueKey(msg.id),
+                      direction: DismissDirection.startToEnd,
+                      confirmDismiss: (direction) async {
+                        _onSwipeReply(msg);
+                        return false;
+                      },
+                      background: Container(
+                        alignment: Alignment.centerLeft,
+                        padding: EdgeInsets.only(left: 20),
+                        child: Icon(Icons.reply, color: const Color(0xFF1A60FF)),
+                      ),
+                      child: _buildMessageBubble(msg, isDark),
+                    ),
+                  );
                 },
               ),
             ),
           ),
+
+          if (_replyingTo != null)
+            Container(
+              padding: EdgeInsets.all(8),
+              color: isDark ? Colors.grey[900] : Colors.grey[200],
+              child: Row(
+                children: [
+                  Container(width: 4, height: 40, color: const Color(0xFF1A60FF)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(_replyingTo!.senderName, style: TextStyle(color: const Color(0xFF1A60FF), fontWeight: FontWeight.bold)),
+                        Text(_replyingTo!.text, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.grey)),
+                      ],
+                    ),
+                  ),
+                  IconButton(icon: Icon(Icons.close, color: Colors.grey), onPressed: () => setState(() => _replyingTo = null)),
+                ],
+              ),
+            ),
+
           Container(
             padding: EdgeInsets.all(isDesktop ? 20 : 10),
             decoration: BoxDecoration(
@@ -264,12 +319,31 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               borderRadius: BorderRadius.circular(16),
             ),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (message.replyToId != null)
+                  Container(
+                    margin: EdgeInsets.only(bottom: 6),
+                    padding: EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border(left: BorderSide(color: isMe ? Colors.white70 : const Color(0xFF1A60FF), width: 3))
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(message.replyToSender ?? "Unknown", style: TextStyle(color: isMe ? Colors.white70 : const Color(0xFF1A60FF), fontWeight: FontWeight.bold, fontSize: 11)),
+                        Text(message.replyToContent ?? "...", style: TextStyle(color: isMe ? Colors.white60 : Colors.black54, fontSize: 11, overflow: TextOverflow.ellipsis), maxLines: 1),
+                      ],
+                    ),
+                  ),
+
                 Text(message.text, style: TextStyle(color: textColor, fontSize: 15)),
                 const SizedBox(height: 4),
                 Row(
                   mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     Text(
                       "${message.timestamp.hour.toString().padLeft(2, '0')}:${message.timestamp.minute.toString().padLeft(2, '0')}",
@@ -282,7 +356,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                           (message.status == MessageStatus.read
                               ? Icons.done_all
                               : (message.status == MessageStatus.failed ? Icons.error : Icons.done)),
-                          size: 14,
+                          size: 12,
                           color: message.status == MessageStatus.read ? Colors.lightBlueAccent : Colors.white70
                       )
                     ]

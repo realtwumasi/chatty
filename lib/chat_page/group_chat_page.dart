@@ -27,8 +27,8 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   final ScrollController _scrollController = ScrollController();
   late String _chatId;
   Timer? _typingDebounce;
-
   late ChatRepository _repository;
+  Message? _replyingTo;
 
   @override
   void initState() {
@@ -55,6 +55,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
         _repository.fetchMessagesForChat(_chatId, true);
       });
       _messageController.clear();
+      setState(() => _replyingTo = null);
     }
   }
 
@@ -80,29 +81,44 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   void _sendMessage() {
     if (_messageController.text.trim().isNotEmpty) {
       final repo = ref.read(chatRepositoryProvider);
+      final replyContext = _replyingTo;
+      _messageController.clear();
+      setState(() => _replyingTo = null);
+
       repo.sendMessage(
           _chatId,
           _messageController.text.trim(),
-          true // isGroup
+          true,
+          replyTo: replyContext
       );
-      _messageController.clear();
+
       repo.sendTyping(_chatId, true, false);
       _scrollToBottom();
     }
   }
 
+  void _onSwipeReply(Message message) {
+    setState(() {
+      _replyingTo = message;
+    });
+  }
+
   void _scrollToBottom({bool animated = true}) {
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
-        if (animated) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        } else {
-          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-        }
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (_scrollController.hasClients) {
+            if (animated) {
+              _scrollController.animateTo(
+                _scrollController.position.maxScrollExtent,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+              );
+            } else {
+              _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+            }
+          }
+        });
       }
     });
   }
@@ -219,11 +235,51 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                       ),
                     );
                   }
-                  return _buildGroupMessageBubble(message, isDark);
+
+                  return GestureDetector(
+                    onLongPress: () => _onSwipeReply(message),
+                    child: Dismissible(
+                      key: ValueKey(message.id),
+                      direction: DismissDirection.startToEnd,
+                      confirmDismiss: (_) async {
+                        _onSwipeReply(message);
+                        return false;
+                      },
+                      background: Container(
+                        alignment: Alignment.centerLeft,
+                        padding: EdgeInsets.only(left: 20),
+                        child: Icon(Icons.reply, color: const Color(0xFF1A60FF)),
+                      ),
+                      child: _buildGroupMessageBubble(message, isDark),
+                    ),
+                  );
                 },
               ),
             ),
           ),
+
+          if (_replyingTo != null)
+            Container(
+              padding: EdgeInsets.all(8),
+              color: isDark ? Colors.grey[900] : Colors.grey[200],
+              child: Row(
+                children: [
+                  Container(width: 4, height: 40, color: const Color(0xFF1A60FF)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(_replyingTo!.senderName, style: TextStyle(color: const Color(0xFF1A60FF), fontWeight: FontWeight.bold)),
+                        Text(_replyingTo!.text, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.grey)),
+                      ],
+                    ),
+                  ),
+                  IconButton(icon: Icon(Icons.close, color: Colors.grey), onPressed: () => setState(() => _replyingTo = null)),
+                ],
+              ),
+            ),
+
           Container(
             padding: EdgeInsets.all(isDesktop ? 20 : 10),
             decoration: BoxDecoration(
@@ -310,6 +366,25 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // Reply Context
+                  if (message.replyToId != null)
+                    Container(
+                      margin: EdgeInsets.only(bottom: 6),
+                      padding: EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border(left: BorderSide(color: isMe ? Colors.white70 : senderColor, width: 3))
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(message.replyToSender ?? "Unknown", style: TextStyle(color: isMe ? Colors.white70 : senderColor, fontWeight: FontWeight.bold, fontSize: 11)),
+                          Text(message.replyToContent ?? "...", style: TextStyle(color: isMe ? Colors.white60 : Colors.black54, fontSize: 11, overflow: TextOverflow.ellipsis), maxLines: 1),
+                        ],
+                      ),
+                    ),
+
                   if (!isMe)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4.0),
@@ -370,7 +445,6 @@ class _GroupInfoContent extends ConsumerWidget {
     final currentUser = ref.watch(userProvider);
     final chatList = ref.watch(chatListProvider);
 
-    // Find the chat object dynamically so UI updates when members change
     final chat = chatList.firstWhere((c) => c.id == chatId, orElse: () => Chat(id: chatId, name: 'Unknown', isGroup: true, messages: [], participants: []));
 
     return Padding(
@@ -415,7 +489,6 @@ class _GroupInfoContent extends ConsumerWidget {
                     } else if (value == 'remove') {
                       try {
                         await repo.removeMemberFromGroup(chat.id, user.id);
-                        // No manual pop here; let the list update live
                       } catch (e) {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed to remove: $e")));

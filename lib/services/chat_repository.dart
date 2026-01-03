@@ -35,6 +35,7 @@ class ChatRepository {
   Timer? _saveDebounce;
 
   ChatRepository(this._ref) {
+    // 1. Listen to WebSocket connection status
     _ws.isConnected.addListener(() {
       final connected = _ws.isConnected.value;
       _ref.read(wsConnectionProvider.notifier).state = connected;
@@ -44,6 +45,17 @@ class ChatRepository {
       if (connected) {
         fetchChats();
       }
+    });
+
+    // 2. Listen to API Token Refreshes (Fix for 401 loops)
+    // When the API Service successfully refreshes the token, we MUST reconnect the WebSocket
+    // with the new token, otherwise WS stays dead or keeps failing authentication.
+    _api.onTokenRefreshed.listen((newToken) {
+      if (kDebugMode) print("Repo: Token refreshed, reconnecting WebSocket...");
+      // Disconnect old
+      _ws.disconnect();
+      // Connect new
+      _initWebSocket(newToken);
     });
   }
 
@@ -131,7 +143,7 @@ class ChatRepository {
       final newChatList = List<Chat>.from(chats);
       newChatList[index] = updatedChat;
       _ref.read(chatListProvider.notifier).state = newChatList;
-      saveChatsToLocal(immediate: true); // Save immediately on read
+      saveChatsToLocal(immediate: true);
 
       _sendReadReceipt(chats[index]);
     }
@@ -218,8 +230,10 @@ class ChatRepository {
 
         for (int j = 0; j <= msgIndex; j++) {
           final msg = newMessages[j];
-          // Update only if it's my message and not already read
           if (msg.isMe && msg.status != MessageStatus.read) {
+            if (!hasUpdates) {
+              hasUpdates = true;
+            }
             newMessages[j] = Message(
               id: msg.id,
               senderId: msg.senderId,
@@ -229,8 +243,10 @@ class ChatRepository {
               isMe: msg.isMe,
               isSystem: msg.isSystem,
               status: MessageStatus.read,
+              replyToId: msg.replyToId,
+              replyToSender: msg.replyToSender,
+              replyToContent: msg.replyToContent,
             );
-            hasUpdates = true;
           }
         }
 
@@ -271,6 +287,9 @@ class ChatRepository {
       timestamp: DateTime.tryParse(payload['timestamp'] ?? '') ?? DateTime.now(),
       isMe: payload['sender_id'].toString() == currentUser.id,
       status: MessageStatus.delivered,
+      replyToId: payload['reply_to_id']?.toString() ?? payload['reply_to']?['id']?.toString(),
+      replyToSender: payload['reply_to_sender']?.toString() ?? payload['reply_to']?['sender_username']?.toString(),
+      replyToContent: payload['reply_to_content']?.toString() ?? payload['reply_to']?['content']?.toString(),
     );
 
     final chats = _ref.read(chatListProvider);
@@ -310,8 +329,10 @@ class ChatRepository {
 
     if (chatIndex != -1) {
       final currentChat = chats[chatIndex];
+      // Dedupe
       if (currentChat.messages.any((m) => m.id == newMessage.id)) return;
 
+      // Filter out temp 'sending' messages
       final filteredMessages = currentChat.messages.where((m) {
         if (m.isMe && m.status == MessageStatus.sending && m.text == newMessage.text) {
           return false;
@@ -351,6 +372,10 @@ class ChatRepository {
       });
     }
   }
+
+  // ... (Typing indicator, User Join/Leave, saveToLocal, Actions methods)
+  // These remain largely same, just standard boilerplate here
+  // I will include them to make file complete and valid
 
   void _handleTypingIndicator(Map<String, dynamic> payload) {
     final isTyping = payload['is_typing'] == true;
@@ -408,8 +433,6 @@ class ChatRepository {
       _ws.sendTyping(null, chatId, isTyping);
     }
   }
-
-  // --- Handlers for Join/Leave/Remove ---
 
   void _handleUserJoined(Map<String, dynamic> payload) {
     _updateGroupMembership(payload, "has been added to the group", true);
@@ -486,8 +509,6 @@ class ChatRepository {
       _saveDebounce = Timer(const Duration(seconds: 2), persist);
     }
   }
-
-  // --- Actions ---
 
   Future<void> login(String username, String password) async {
     _ref.read(isLoadingProvider.notifier).state = true;
@@ -745,7 +766,7 @@ class ChatRepository {
         final newMsgs = data.map((e) => Message.fromJson(e, currentUser.id)).toList();
         newMsgs.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
-        // SMART MERGE: Check local messages to preserve 'read' status
+        // SMART MERGE: Preserve 'read' status from local
         final currentMessages = chats[chatIndex].messages;
         final mergedMessages = <Message>[];
 
@@ -754,7 +775,6 @@ class ChatRepository {
         for (var newMsg in newMsgs) {
           if (localMsgMap.containsKey(newMsg.id)) {
             final local = localMsgMap[newMsg.id]!;
-            // If local is 'read' but server says 'delivered', trust local
             if (local.status == MessageStatus.read && newMsg.status != MessageStatus.read) {
               mergedMessages.add(local);
             } else {
@@ -765,7 +785,6 @@ class ChatRepository {
           }
         }
 
-        // Add pending messages not in server response yet
         final pending = currentMessages.where((m) =>
         !mergedMessages.any((merged) => merged.id == m.id) &&
             (m.status == MessageStatus.sending || m.status == MessageStatus.failed || m.isSystem)
@@ -878,10 +897,10 @@ class ChatRepository {
       newChatList[chatIndex] = updatedChat;
       _ref.read(chatListProvider.notifier).state = newChatList;
     }
-    await sendMessage(chatId, message.text, isGroup);
+    await sendMessage(chatId, message.text, isGroup, replyTo: message.replyToId != null ? Message(id: message.replyToId!, senderId: '', senderName: message.replyToSender ?? '', text: message.replyToContent ?? '', timestamp: DateTime.now(), isMe: false) : null);
   }
 
-  Future<void> sendMessage(String targetId, String content, bool isGroup) async {
+  Future<void> sendMessage(String targetId, String content, bool isGroup, {Message? replyTo}) async {
     final currentUser = _ref.read(userProvider);
     if (currentUser == null) return;
 
@@ -890,6 +909,7 @@ class ChatRepository {
       'content': content,
       'message_type': isGroup ? 'group' : 'private',
       if (isGroup) 'group': targetId else 'recipient_id': targetId,
+      if (replyTo != null) 'reply_to_id': replyTo.id,
     };
 
     final chats = _ref.read(chatListProvider);
@@ -906,6 +926,9 @@ class ChatRepository {
         timestamp: DateTime.now(),
         isMe: true,
         status: MessageStatus.sending,
+        replyToId: replyTo?.id,
+        replyToSender: replyTo?.senderName,
+        replyToContent: replyTo?.text,
       );
 
       final updatedChat = Chat(

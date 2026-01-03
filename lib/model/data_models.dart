@@ -49,6 +49,11 @@ class Message {
   final bool isSystem;
   MessageStatus status;
 
+  // Reply fields
+  final String? replyToId;
+  final String? replyToSender;
+  final String? replyToContent;
+
   Message({
     this.id = '',
     required this.senderId,
@@ -58,21 +63,32 @@ class Message {
     required this.isMe,
     this.isSystem = false,
     this.status = MessageStatus.sent,
+    this.replyToId,
+    this.replyToSender,
+    this.replyToContent,
   });
 
   factory Message.fromJson(Map<String, dynamic> json, String currentUserId) {
     final senderData = json['sender'] is Map ? json['sender'] : {};
-    final senderId = senderData['id']?.toString() ?? '';
-    final senderName = senderData['username'] ?? 'Unknown';
+    final senderId = senderData['id']?.toString() ?? json['sender_id']?.toString() ?? '';
+    final senderName = senderData['username'] ?? json['sender_username'] ?? 'Unknown';
+
+    // Handle reply data from API (assuming flattening or nested object)
+    // If backend returns 'reply_to' object:
+    final replyData = json['reply_to'] as Map<String, dynamic>?;
 
     return Message(
-      id: json['id']?.toString() ?? '',
+      id: json['id']?.toString() ?? json['message_id']?.toString() ?? '',
       senderId: senderId,
       senderName: senderName,
       text: json['content'] ?? '',
-      timestamp: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
+      timestamp: DateTime.tryParse(json['created_at'] ?? json['timestamp'] ?? '') ?? DateTime.now(),
       isMe: senderId == currentUserId,
-      status: MessageStatus.sent,
+      status: MessageStatus.sent, // Default to sent if not provided
+      isSystem: json['is_system'] ?? false,
+      replyToId: replyData?['id']?.toString() ?? json['reply_to_id']?.toString(),
+      replyToSender: replyData?['sender_username'] ?? json['reply_to_sender']?.toString(),
+      replyToContent: replyData?['content'] ?? json['reply_to_content']?.toString(),
     );
   }
 
@@ -87,6 +103,9 @@ class Message {
       'isMe': isMe,
       'isSystem': isSystem,
       'status': status.index,
+      'replyToId': replyToId,
+      'replyToSender': replyToSender,
+      'replyToContent': replyToContent,
     };
   }
 
@@ -100,6 +119,9 @@ class Message {
       isMe: json['isMe'],
       isSystem: json['isSystem'] ?? false,
       status: MessageStatus.values[json['status'] ?? 1],
+      replyToId: json['replyToId'],
+      replyToSender: json['replyToSender'],
+      replyToContent: json['replyToContent'],
     );
   }
 
