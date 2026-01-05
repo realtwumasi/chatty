@@ -35,26 +35,19 @@ class ChatRepository {
   Timer? _saveDebounce;
 
   ChatRepository(this._ref) {
-    // 1. Listen to WebSocket connection status
     _ws.isConnected.addListener(() {
       final connected = _ws.isConnected.value;
       _ref.read(wsConnectionProvider.notifier).state = connected;
       if (kDebugMode) print("WS Status Changed: $connected");
 
-      // Auto-sync data when connection is restored to catch up on missed messages
       if (connected) {
         fetchChats();
       }
     });
 
-    // 2. Listen to API Token Refreshes (Fix for 401 loops)
-    // When the API Service successfully refreshes the token, we MUST reconnect the WebSocket
-    // with the new token, otherwise WS stays dead or keeps failing authentication.
     _api.onTokenRefreshed.listen((newToken) {
       if (kDebugMode) print("Repo: Token refreshed, reconnecting WebSocket...");
-      // Disconnect old
       _ws.disconnect();
-      // Connect new
       _initWebSocket(newToken);
     });
   }
@@ -130,22 +123,28 @@ class ChatRepository {
     _activeChatId = chatId;
     final chats = _ref.read(chatListProvider);
     final index = chats.indexWhere((c) => c.id == chatId);
-    if (index != -1 && chats[index].unreadCount > 0) {
-      final updatedChat = Chat(
-        id: chats[index].id,
-        name: chats[index].name,
-        isGroup: chats[index].isGroup,
-        participants: chats[index].participants,
-        messages: chats[index].messages,
-        unreadCount: 0,
-        eventLog: chats[index].eventLog,
-      );
-      final newChatList = List<Chat>.from(chats);
-      newChatList[index] = updatedChat;
-      _ref.read(chatListProvider.notifier).state = newChatList;
-      saveChatsToLocal(immediate: true);
+    if (index != -1) {
+      final chat = chats[index];
 
-      _sendReadReceipt(chats[index]);
+      // Update local unread count
+      if (chat.unreadCount > 0) {
+        final updatedChat = Chat(
+          id: chat.id,
+          name: chat.name,
+          isGroup: chat.isGroup,
+          participants: chat.participants,
+          messages: chat.messages,
+          unreadCount: 0,
+          eventLog: chat.eventLog,
+        );
+        final newChatList = List<Chat>.from(chats);
+        newChatList[index] = updatedChat;
+        _ref.read(chatListProvider.notifier).state = newChatList;
+        saveChatsToLocal(immediate: true);
+      }
+
+      // Trigger read receipt
+      _sendReadReceipt(chat);
     }
   }
 
@@ -154,14 +153,19 @@ class ChatRepository {
   }
 
   void _sendReadReceipt(Chat chat) {
-    if (chat.isGroup) {
-      _ws.sendMarkRead(chat.id, null);
-    } else {
-      final currentUser = _ref.read(userProvider);
-      final otherUser = chat.participants.firstWhere((u) => u.id != currentUser?.id, orElse: () => User(id: '', name: '', email: ''));
-      if (otherUser.id.isNotEmpty) {
-        _ws.sendMarkRead(null, otherUser.id);
-      }
+    if (chat.messages.isEmpty) return;
+
+    try {
+      // Find the last incoming message (not from me)
+      final lastIncoming = chat.messages.lastWhere((m) => !m.isMe);
+
+      // If found, mark it as read on the server.
+      // The server/client logic implies a "waterfall" effect (marking X as read marks all before X as read).
+      // We send it even if already read locally to ensure server sync across devices.
+      _ws.sendMarkRead(lastIncoming.id);
+
+    } catch (e) {
+      // No incoming messages, nothing to mark
     }
   }
 
@@ -219,21 +223,24 @@ class ChatRepository {
     if (messageId == null) return;
 
     final chats = _ref.read(chatListProvider);
+
+    // Find the chat containing this message
     for (int i = 0; i < chats.length; i++) {
       final chat = chats[i];
       final msgIndex = chat.messages.indexWhere((m) => m.id == messageId);
 
       if (msgIndex != -1) {
-        // Waterfall Update: Mark this and all prior sent messages as read
+        // Found it.
+        // Logic: Mark this message AND all previous "sent" messages by me as "read" (Double Tick).
+        // Messages are sorted Oldest -> Newest.
+
         final newMessages = List<Message>.from(chat.messages);
         bool hasUpdates = false;
 
+        // Iterate up to and including the read message
         for (int j = 0; j <= msgIndex; j++) {
           final msg = newMessages[j];
           if (msg.isMe && msg.status != MessageStatus.read) {
-            if (!hasUpdates) {
-              hasUpdates = true;
-            }
             newMessages[j] = Message(
               id: msg.id,
               senderId: msg.senderId,
@@ -242,35 +249,35 @@ class ChatRepository {
               timestamp: msg.timestamp,
               isMe: msg.isMe,
               isSystem: msg.isSystem,
-              status: MessageStatus.read,
+              status: MessageStatus.read, // Double Tick
               replyToId: msg.replyToId,
               replyToSender: msg.replyToSender,
               replyToContent: msg.replyToContent,
             );
+            hasUpdates = true;
           }
         }
 
-        if (!hasUpdates) return;
+        if (hasUpdates) {
+          final updatedChat = Chat(
+            id: chat.id,
+            name: chat.name,
+            isGroup: chat.isGroup,
+            participants: chat.participants,
+            messages: newMessages,
+            unreadCount: chat.unreadCount,
+            eventLog: chat.eventLog,
+          );
 
-        final updatedChat = Chat(
-          id: chat.id,
-          name: chat.name,
-          isGroup: chat.isGroup,
-          participants: chat.participants,
-          messages: newMessages,
-          unreadCount: chat.unreadCount,
-          eventLog: chat.eventLog,
-        );
+          final newChatList = List<Chat>.from(chats);
+          newChatList[i] = updatedChat;
 
-        final newChatList = List<Chat>.from(chats);
-        newChatList[i] = updatedChat;
-
-        Future.microtask(() {
-          _ref.read(chatListProvider.notifier).state = newChatList;
-          saveChatsToLocal();
-        });
-
-        break;
+          Future.microtask(() {
+            _ref.read(chatListProvider.notifier).state = newChatList;
+            saveChatsToLocal();
+          });
+        }
+        break; // Chat found and updated
       }
     }
   }
@@ -279,18 +286,10 @@ class ChatRepository {
     final currentUser = _ref.read(userProvider);
     if (currentUser == null) return;
 
-    final newMessage = Message(
-      id: payload['message_id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
-      senderId: payload['sender_id']?.toString() ?? '',
-      senderName: payload['sender_username'] ?? 'Unknown',
-      text: payload['content'] ?? '',
-      timestamp: DateTime.tryParse(payload['timestamp'] ?? '') ?? DateTime.now(),
-      isMe: payload['sender_id'].toString() == currentUser.id,
-      status: MessageStatus.delivered,
-      replyToId: payload['reply_to_id']?.toString() ?? payload['reply_to']?['id']?.toString(),
-      replyToSender: payload['reply_to_sender']?.toString() ?? payload['reply_to']?['sender_username']?.toString(),
-      replyToContent: payload['reply_to_content']?.toString() ?? payload['reply_to']?['content']?.toString(),
-    );
+    final newMessage = Message.fromJson(payload, currentUser.id);
+
+    // Incoming messages via WS are 'delivered'
+    newMessage.status = MessageStatus.delivered;
 
     final chats = _ref.read(chatListProvider);
     int chatIndex = -1;
@@ -329,10 +328,10 @@ class ChatRepository {
 
     if (chatIndex != -1) {
       final currentChat = chats[chatIndex];
-      // Dedupe
+      // Dedupe by ID
       if (currentChat.messages.any((m) => m.id == newMessage.id)) return;
 
-      // Filter out temp 'sending' messages
+      // Filter out temp 'sending' messages that match the content (Optimistic Replacement)
       final filteredMessages = currentChat.messages.where((m) {
         if (m.isMe && m.status == MessageStatus.sending && m.text == newMessage.text) {
           return false;
@@ -343,13 +342,15 @@ class ChatRepository {
       final updatedMessages = [...filteredMessages, newMessage];
       updatedMessages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
+      // Active Chat Logic
       final bool isActive = _activeChatId == currentChat.id;
       final int newUnreadCount = isActive
           ? 0
           : currentChat.unreadCount + (newMessage.isMe ? 0 : 1);
 
+      // Instant Read Receipt: If I'm looking at this chat, mark incoming message as read immediately
       if (isActive && !newMessage.isMe) {
-        _sendReadReceipt(currentChat);
+        _ws.sendMarkRead(newMessage.id);
       }
 
       final updatedChat = Chat(
@@ -364,7 +365,7 @@ class ChatRepository {
 
       final newChatList = List<Chat>.from(chats);
       newChatList.removeAt(chatIndex);
-      newChatList.insert(0, updatedChat);
+      newChatList.insert(0, updatedChat); // Bump to top
 
       Future.microtask(() {
         _ref.read(chatListProvider.notifier).state = newChatList;
@@ -372,10 +373,6 @@ class ChatRepository {
       });
     }
   }
-
-  // ... (Typing indicator, User Join/Leave, saveToLocal, Actions methods)
-  // These remain largely same, just standard boilerplate here
-  // I will include them to make file complete and valid
 
   void _handleTypingIndicator(Map<String, dynamic> payload) {
     final isTyping = payload['is_typing'] == true;
@@ -433,6 +430,8 @@ class ChatRepository {
       _ws.sendTyping(null, chatId, isTyping);
     }
   }
+
+  // --- Handlers for Join/Leave/Remove ---
 
   void _handleUserJoined(Map<String, dynamic> payload) {
     _updateGroupMembership(payload, "has been added to the group", true);
@@ -509,6 +508,8 @@ class ChatRepository {
       _saveDebounce = Timer(const Duration(seconds: 2), persist);
     }
   }
+
+  // --- Actions ---
 
   Future<void> login(String username, String password) async {
     _ref.read(isLoadingProvider.notifier).state = true;
@@ -766,7 +767,7 @@ class ChatRepository {
         final newMsgs = data.map((e) => Message.fromJson(e, currentUser.id)).toList();
         newMsgs.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
-        // SMART MERGE: Preserve 'read' status from local
+        // SMART MERGE: Check local messages to preserve 'read' status
         final currentMessages = chats[chatIndex].messages;
         final mergedMessages = <Message>[];
 
@@ -775,6 +776,7 @@ class ChatRepository {
         for (var newMsg in newMsgs) {
           if (localMsgMap.containsKey(newMsg.id)) {
             final local = localMsgMap[newMsg.id]!;
+            // If local is 'read' but server says 'delivered', trust local
             if (local.status == MessageStatus.read && newMsg.status != MessageStatus.read) {
               mergedMessages.add(local);
             } else {
@@ -785,6 +787,7 @@ class ChatRepository {
           }
         }
 
+        // Add pending messages not in server response yet
         final pending = currentMessages.where((m) =>
         !mergedMessages.any((merged) => merged.id == m.id) &&
             (m.status == MessageStatus.sending || m.status == MessageStatus.failed || m.isSystem)

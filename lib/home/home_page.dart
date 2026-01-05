@@ -25,7 +25,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _searchFocusNode = FocusNode();
-  final FocusNode _listFocusNode = FocusNode(); // Focus node for list navigation
+  final FocusNode _listFocusNode = FocusNode();
 
   String _searchQuery = "";
   int _selectedFilterIndex = 0; // 0: All, 1: Private, 2: Group
@@ -51,7 +51,6 @@ class _HomePageState extends ConsumerState<HomePage> {
         _selectedChat = chat;
         chat.unreadCount = 0;
       });
-      // Ensure list keeps focus for keyboard nav unless user clicks elsewhere
       _listFocusNode.requestFocus();
     } else {
       if (chat.isGroup) {
@@ -77,10 +76,10 @@ class _HomePageState extends ConsumerState<HomePage> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        title: Text("Logout", style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
-        content: Text("Are you sure you want to log out?", style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
+        title: Text("Logout", style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: Responsive.fontSize(context, 18))),
+        content: Text("Are you sure you want to log out?", style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: Responsive.fontSize(context, 14))),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text("Cancel", style: TextStyle(fontSize: Responsive.fontSize(context, 14)))),
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
@@ -93,14 +92,12 @@ class _HomePageState extends ConsumerState<HomePage> {
                 );
               }
             },
-            child: const Text("Logout", style: TextStyle(color: Colors.red)),
+            child: Text("Logout", style: TextStyle(color: Colors.red, fontSize: Responsive.fontSize(context, 14))),
           ),
         ],
       ),
     );
   }
-
-  // --- Keyboard Handling ---
 
   void _handleKeyNavigation(RawKeyEvent event, List<Chat> displayChats) {
     if (event is! RawKeyDownEvent) return;
@@ -131,12 +128,10 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   void _scrollToIndex(int index) {
-    // Simple estimation: 72 is approx tile height
     const itemHeight = 72.0;
     final targetOffset = index * itemHeight;
 
     if (_scrollController.hasClients) {
-      // If target is out of view, scroll to it
       if (targetOffset < _scrollController.offset) {
         _scrollController.animateTo(targetOffset, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
       } else if (targetOffset > _scrollController.offset + _scrollController.position.viewportDimension - itemHeight) {
@@ -163,7 +158,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         },
       },
       child: Focus(
-        autofocus: true, // Ensure we catch shortcuts even if no specific widget focused
+        autofocus: true,
         child: LayoutBuilder(
           builder: (context, constraints) {
             final content = _buildMobileLayout(isConnected);
@@ -185,15 +180,18 @@ class _HomePageState extends ConsumerState<HomePage> {
           : Container(
         width: double.infinity,
         color: Colors.redAccent.shade700,
-        padding: EdgeInsets.symmetric(vertical: 6.h),
+        padding: EdgeInsets.symmetric(vertical: 6.h, horizontal: 16.w),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.wifi_off, color: Colors.white, size: Responsive.fontSize(context, 14)),
             SizedBox(width: 8.w),
-            Text(
-              "Waiting for connection...",
-              style: TextStyle(color: Colors.white, fontSize: Responsive.fontSize(context, 12), fontWeight: FontWeight.bold),
+            Flexible(
+              child: Text(
+                "Waiting for connection...",
+                style: TextStyle(color: Colors.white, fontSize: Responsive.fontSize(context, 12), fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),
@@ -202,8 +200,13 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   Widget _buildSearchBar(bool isDark, Color inputColor) {
+    final bool isDesktop = Responsive.isDesktop(context);
+    // Use fixed padding on desktop to avoid massive scaling
+    final hPadding = isDesktop ? 16.0 : 16.w;
+    final vPadding = isDesktop ? 8.0 : 8.h;
+
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+      padding: EdgeInsets.symmetric(horizontal: hPadding, vertical: vPadding),
       child: Container(
         decoration: BoxDecoration(
           color: inputColor,
@@ -219,7 +222,7 @@ class _HomePageState extends ConsumerState<HomePage> {
               hintStyle: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 14)),
               prefixIcon: const Icon(Icons.search, color: Colors.grey),
               border: InputBorder.none,
-              contentPadding: EdgeInsets.symmetric(vertical: 12.h),
+              contentPadding: EdgeInsets.symmetric(vertical: isDesktop ? 12 : 12.h),
               suffixIcon: _searchQuery.isNotEmpty
                   ? IconButton(icon: const Icon(Icons.clear, color: Colors.grey), onPressed: () {
                 _searchController.clear();
@@ -234,27 +237,39 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   Widget _buildFilterTabs(bool isDark) {
+    final bool isDesktop = Responsive.isDesktop(context);
+    final hPadding = isDesktop ? 16.0 : 16.w;
+    final vPadding = isDesktop ? 4.0 : 4.h;
+    final gap = isDesktop ? 8.0 : 8.w;
+
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 4.h),
-      child: Row(
-        children: [
-          _filterChip("All", 0, isDark),
-          SizedBox(width: 8.w),
-          _filterChip("Private", 1, isDark),
-          SizedBox(width: 8.w),
-          _filterChip("Groups", 2, isDark),
-        ],
+      padding: EdgeInsets.symmetric(horizontal: hPadding, vertical: vPadding),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _filterChip("All", 0, isDark, isDesktop),
+            SizedBox(width: gap),
+            _filterChip("Private", 1, isDark, isDesktop),
+            SizedBox(width: gap),
+            _filterChip("Groups", 2, isDark, isDesktop),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _filterChip(String label, int index, bool isDark) {
+  Widget _filterChip(String label, int index, bool isDark, bool isDesktop) {
     final isSelected = _selectedFilterIndex == index;
+    // Use fixed padding for desktop to prevent overflow
+    final hPad = isDesktop ? 16.0 : 16.w;
+    final vPad = isDesktop ? 6.0 : 6.h;
+
     return InkWell(
       onTap: () => setState(() => _selectedFilterIndex = index),
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 6.h),
+        padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
         decoration: BoxDecoration(
           color: isSelected ? const Color(0xFF1A60FF) : (isDark ? Colors.grey[800] : Colors.grey[200]),
           borderRadius: BorderRadius.circular(20),
@@ -322,7 +337,7 @@ class _HomePageState extends ConsumerState<HomePage> {
             child: Row(
               children: [
                 SizedBox(
-                  width: 380,
+                  width: 380, // Fixed width sidebar
                   child: Column(
                     children: [
                       _buildAppBar(textColor, isDark, isDesktop: true),
@@ -369,12 +384,17 @@ class _HomePageState extends ConsumerState<HomePage> {
   Widget _buildCompactUserProfile(bool isDark, Color textColor) {
     final currentUser = ref.watch(userProvider) ?? User(id: '', name: '?', email: '');
     final repo = ref.read(chatRepositoryProvider);
+    final isDesktop = Responsive.isDesktop(context);
+
     return ListTile(
       tileColor: isDark ? Colors.grey[900] : Colors.grey[50],
-      contentPadding: EdgeInsets.symmetric(horizontal: 16.w, vertical: Responsive.isDesktop(context) ? 8 : 4.h),
+      contentPadding: EdgeInsets.symmetric(
+          horizontal: isDesktop ? 16 : 16.w,
+          vertical: isDesktop ? 8 : 8.h
+      ),
       leading: CircleAvatar(
         backgroundColor: const Color(0xFF1A60FF),
-        radius: Responsive.radius(context, 20),
+        radius: isDesktop ? 20 : 20.r,
         child: Text(
             currentUser.name.isNotEmpty ? currentUser.name[0] : '?',
             style: TextStyle(color: Colors.white, fontSize: Responsive.fontSize(context, 16))
@@ -394,7 +414,7 @@ class _HomePageState extends ConsumerState<HomePage> {
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
           ),
-          SizedBox(width: 16.w),
+          SizedBox(width: isDesktop ? 16 : 16.w),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.red),
             iconSize: Responsive.fontSize(context, 24),
@@ -407,58 +427,27 @@ class _HomePageState extends ConsumerState<HomePage> {
     );
   }
 
-  void _showContextMenu(BuildContext context, Chat chat, Offset position) {
-    final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-
-    showMenu(
-      context: context,
-      position: RelativeRect.fromRect(
-        position & const Size(40, 40),
-        Offset.zero & overlay.size,
-      ),
-      items: [
-        if (chat.isGroup)
-          PopupMenuItem(
-            child: const Text('Leave Group', style: TextStyle(color: Colors.red)),
-            onTap: () {
-              ref.read(chatRepositoryProvider).leaveGroup(chat.id);
-              if (_selectedChat?.id == chat.id) {
-                setState(() => _selectedChat = null);
-              }
-            },
-          ),
-        const PopupMenuItem(
-          value: 'read',
-          child: Text('Mark as Read'),
-        ),
-      ],
-    );
-  }
-
   Widget _buildChatList({required bool isDesktop}) {
     final chats = ref.watch(chatListProvider);
     final isLoading = ref.watch(isLoadingProvider);
 
-    // 1. Filter by Tab
     var displayChats = chats;
-    if (_selectedFilterIndex == 1) { // Private
+    if (_selectedFilterIndex == 1) {
       displayChats = chats.where((c) => !c.isGroup).toList();
-    } else if (_selectedFilterIndex == 2) { // Group
+    } else if (_selectedFilterIndex == 2) {
       displayChats = chats.where((c) => c.isGroup).toList();
     }
 
-    // 2. Filter by Search Query
     if (_searchQuery.isNotEmpty) {
       displayChats = displayChats.where((c) => c.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
     }
 
     if (displayChats.isEmpty) {
       if (isLoading && chats.isEmpty) return const Center(child: CircularProgressIndicator());
-      if (_searchQuery.isNotEmpty) return const Center(child: Text("No chats found"));
-      return Center(child: Text("No chats yet", style: TextStyle(color: Colors.grey[400])));
+      if (_searchQuery.isNotEmpty) return Center(child: Text("No chats found", style: TextStyle(color: Colors.grey[400], fontSize: Responsive.fontSize(context, 16))));
+      return Center(child: Text("No chats yet", style: TextStyle(color: Colors.grey[400], fontSize: Responsive.fontSize(context, 16))));
     }
 
-    // Wrap in RawKeyboardListener for desktop navigation
     return RawKeyboardListener(
       focusNode: _listFocusNode,
       onKey: (event) => _handleKeyNavigation(event, displayChats),
@@ -472,7 +461,6 @@ class _HomePageState extends ConsumerState<HomePage> {
             final chat = displayChats[index];
             return GestureDetector(
               onSecondaryTapDown: (details) {
-                // Desktop Right-Click Menu
                 _showContextMenu(context, chat, details.globalPosition);
               },
               child: MessageTile(
@@ -484,6 +472,30 @@ class _HomePageState extends ConsumerState<HomePage> {
           },
         ),
       ),
+    );
+  }
+
+  void _showContextMenu(BuildContext context, Chat chat, Offset position) {
+    final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    showMenu(
+      context: context,
+      position: RelativeRect.fromRect(position & const Size(40, 40), Offset.zero & overlay.size),
+      items: [
+        if (chat.isGroup)
+          PopupMenuItem(
+            child: Text('Leave Group', style: TextStyle(color: Colors.red, fontSize: Responsive.fontSize(context, 14))),
+            onTap: () {
+              ref.read(chatRepositoryProvider).leaveGroup(chat.id);
+              if (_selectedChat?.id == chat.id) {
+                setState(() => _selectedChat = null);
+              }
+            },
+          ),
+        PopupMenuItem(
+          value: 'read',
+          child: Text('Mark as Read', style: TextStyle(fontSize: Responsive.fontSize(context, 14))),
+        ),
+      ],
     );
   }
 
@@ -549,15 +561,15 @@ class _HomePageState extends ConsumerState<HomePage> {
               backgroundColor: Colors.white,
               child: Text(
                 currentUser.name.isNotEmpty ? currentUser.name[0] : '?',
-                style: TextStyle(fontSize: Responsive.fontSize(context, 24), fontWeight: FontWeight.bold, color: const Color(0xFF1A60FF)),
+                style: TextStyle(fontSize: 24.sp, fontWeight: FontWeight.bold, color: const Color(0xFF1A60FF)),
               ),
             ),
             accountName: Text(currentUser.name, style: TextStyle(fontSize: Responsive.fontSize(context, 18), fontWeight: FontWeight.bold)),
-            accountEmail: Text(currentUser.email),
+            accountEmail: Text(currentUser.email, style: TextStyle(fontSize: Responsive.fontSize(context, 14))),
           ),
           ListTile(
             leading: Icon(ref.watch(themeProvider) ? Icons.dark_mode : Icons.light_mode, color: textColor),
-            title: Text("Dark Mode", style: TextStyle(color: textColor)),
+            title: Text("Dark Mode", style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 14))),
             trailing: Switch(
                 value: ref.watch(themeProvider),
                 activeColor: const Color(0xFF1A60FF),
@@ -568,7 +580,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           Divider(color: isDark ? Colors.grey[800] : Colors.grey[300]),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text("Logout", style: TextStyle(color: Colors.red)),
+            title: Text("Logout", style: TextStyle(color: Colors.red, fontSize: Responsive.fontSize(context, 14))),
             onTap: _handleLogout,
           ),
           SizedBox(height: 20.h),

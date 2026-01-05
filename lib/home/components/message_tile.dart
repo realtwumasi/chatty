@@ -61,18 +61,24 @@ class MessageTile extends ConsumerWidget {
     final String lastMessage = chat.lastMessagePreview;
     final String time = chat.messages.isNotEmpty ? _formatTime(chat.messages.last.timestamp) : "";
 
-    // Check status of last message if it's mine
     final lastMsg = chat.messages.isNotEmpty ? chat.messages.last : null;
     final isMyLastMsg = lastMsg?.isMe ?? false;
 
-    // Sizing
+    // Sizing - Fixed on Desktop to prevent scaling issues
     final double avatarRadius = isDesktop ? 24 : 28.r;
     final double titleSize = Responsive.fontSize(context, 16);
     final double subtitleSize = Responsive.fontSize(context, 14);
     final double timeSize = Responsive.fontSize(context, 12);
 
+    // Margins/Padding
+    final hMargin = isDesktop ? 8.0 : 8.w;
+    final vMargin = isDesktop ? 2.0 : 2.h;
+    final vPadding = isDesktop ? 12.0 : 12.h;
+    final hPadding = isDesktop ? 8.0 : 8.w;
+    final contentGap = isDesktop ? 12.0 : 12.w;
+
     return Container(
-      margin: EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
+      margin: EdgeInsets.symmetric(horizontal: hMargin, vertical: vMargin),
       decoration: BoxDecoration(
         color: tileColor,
         borderRadius: BorderRadius.circular(12),
@@ -81,14 +87,10 @@ class MessageTile extends ConsumerWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: EdgeInsets.symmetric(
-              vertical: isDesktop ? 12 : 12.h,
-              horizontal: 8.w
-          ),
+          padding: EdgeInsets.symmetric(vertical: vPadding, horizontal: hPadding),
           child: Row(
             children: [
               CircleAvatar(
-                // Use deterministic color for private chats, grey for groups (or generate there too)
                 backgroundColor: chat.isGroup
                     ? (isDark ? Colors.grey[800] : Colors.grey[300])
                     : _getAvatarColor(chat.name),
@@ -100,11 +102,11 @@ class MessageTile extends ConsumerWidget {
                   style: TextStyle(
                     fontSize: Responsive.fontSize(context, 20),
                     fontWeight: FontWeight.bold,
-                    color: Colors.white, // White text on colored background
+                    color: Colors.white,
                   ),
                 ),
               ),
-              SizedBox(width: 12.w),
+              SizedBox(width: contentGap),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -130,7 +132,7 @@ class MessageTile extends ConsumerWidget {
                             style: TextStyle(
                               fontSize: timeSize,
                               color: chat.unreadCount > 0
-                                  ? const Color(0xFF1A60FF) // Blue if unread
+                                  ? const Color(0xFF1A60FF)
                                   : secondaryTextColor,
                               fontWeight: chat.unreadCount > 0
                                   ? FontWeight.bold
@@ -139,7 +141,7 @@ class MessageTile extends ConsumerWidget {
                           ),
                       ],
                     ),
-                    SizedBox(height: 4.h),
+                    SizedBox(height: isDesktop ? 4 : 4.h),
                     Row(
                       children: [
                         Expanded(
@@ -157,13 +159,13 @@ class MessageTile extends ConsumerWidget {
                             children: [
                               if (isMyLastMsg && lastMsg != null)
                                 Padding(
-                                  padding: EdgeInsets.only(right: 4.w),
+                                  padding: EdgeInsets.only(right: isDesktop ? 4 : 4.w),
                                   child: Icon(
                                     lastMsg.status == MessageStatus.sending ? Icons.access_time :
                                     (lastMsg.status == MessageStatus.read
                                         ? Icons.done_all
                                         : (lastMsg.status == MessageStatus.failed ? Icons.error_outline : Icons.done)),
-                                    size: 14.sp,
+                                    size: Responsive.fontSize(context, 14),
                                     color: lastMsg.status == MessageStatus.read
                                         ? Colors.lightBlueAccent
                                         : (lastMsg.status == MessageStatus.failed ? Colors.red : secondaryTextColor),
@@ -190,7 +192,7 @@ class MessageTile extends ConsumerWidget {
                         ),
                         if (chat.unreadCount > 0)
                           Container(
-                            margin: EdgeInsets.only(left: 8.w),
+                            margin: EdgeInsets.only(left: isDesktop ? 8 : 8.w),
                             padding: const EdgeInsets.all(6),
                             decoration: const BoxDecoration(
                               color: Color(0xFF1A60FF),
@@ -199,7 +201,7 @@ class MessageTile extends ConsumerWidget {
                             child: Text(
                               chat.unreadCount.toString(),
                               style: TextStyle(
-                                fontSize: 10.sp,
+                                fontSize: 10.sp, // keep .sp for text even on desktop to respect scaling slightly
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
                               ),

@@ -37,8 +37,6 @@ class WebSocketService {
             // print('WS Received: $message');
           }
 
-          // FIX: Handle multiple JSON objects in one message (NDJSON) or trailing newlines
-          // The error "Unexpected character at line 2" implies multiple lines of JSON.
           if (message is String) {
             final parts = message.split('\n');
             for (var part in parts) {
@@ -51,7 +49,6 @@ class WebSocketService {
               }
             }
           } else {
-            // Binary or other format, try direct decode if it's not string
             try {
               final data = jsonDecode(message);
               _eventController.add(data);
@@ -86,7 +83,7 @@ class WebSocketService {
     _isDisconnecting = true;
     _reconnectTimer?.cancel();
     if (_channel != null) {
-      _channel!.sink.close(status.goingAway);
+      _channel!.sink.close(status.normalClosure);
       _cleanup();
     }
     isConnected.value = false;
@@ -102,7 +99,6 @@ class WebSocketService {
 
   void _startHeartbeat() {
     _pingTimer?.cancel();
-    // Send ping every 30 seconds to keep connection alive
     _pingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       send('ping', {});
     });
@@ -111,7 +107,6 @@ class WebSocketService {
   void _attemptReconnect() {
     if (_isDisconnecting || _lastToken == null) return;
 
-    // Exponential backoff or simple delay
     if (_reconnectTimer?.isActive ?? false) return;
 
     print('WS: Scheduling reconnect in 5s...');
@@ -153,10 +148,10 @@ class WebSocketService {
     });
   }
 
-  void sendMarkRead(String? groupId, String? senderId) {
+  // Updated to match documentation: Expects message_id
+  void sendMarkRead(String messageId) {
     send('mark_read', {
-      if (groupId != null) 'group_id': groupId,
-      if (senderId != null) 'sender_id': senderId,
+      'message_id': messageId,
     });
   }
 }
