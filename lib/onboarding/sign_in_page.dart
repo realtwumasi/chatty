@@ -45,10 +45,8 @@ class _SignInPageState extends ConsumerState<SignInPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Watch loading state
     final isLoading = ref.watch(isLoadingProvider);
 
-    // ... UI Code remains largely the same, just removed local _isLoading state ...
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
     final textColor = Theme.of(context).colorScheme.onSurface;
@@ -74,7 +72,6 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // ... Branding ...
                       AnimatedTextKit(
                         animatedTexts: [
                           TypewriterAnimatedText(
@@ -89,15 +86,24 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                         ],
                         totalRepeatCount: 1,
                       ),
+                      SizedBox(height: 8.h),
+                      Text(
+                        "Welcome back",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w400,
+                          fontSize: Responsive.fontSize(context, 16),
+                          color: isDark ? Colors.grey[400] : Colors.grey.shade600,
+                        ),
+                      ),
                       SizedBox(height: 40.h),
 
                       TextFormField(
                         controller: _username,
-                        style: TextStyle(color: textColor),
+                        style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16)),
                         validator: (val) => val!.isEmpty ? "Username required" : null,
                         decoration: InputDecoration(
                           labelText: "Username",
-                          labelStyle: TextStyle(color: hintColor),
+                          labelStyle: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14)),
                           filled: true,
                           fillColor: inputFillColor,
                           enabledBorder: OutlineInputBorder(
@@ -114,11 +120,11 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                       TextFormField(
                         controller: _password,
                         obscureText: true,
-                        style: TextStyle(color: textColor),
+                        style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16)),
                         validator: (val) => val!.isEmpty ? "Password required" : null,
                         decoration: InputDecoration(
                           labelText: "Password",
-                          labelStyle: TextStyle(color: hintColor),
+                          labelStyle: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14)),
                           filled: true,
                           fillColor: inputFillColor,
                           enabledBorder: OutlineInputBorder(
@@ -151,7 +157,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
                               MaterialPageRoute(builder: (context) => const CreateAccount())
                           );
                         },
-                        child: const Text("Create Account", style: TextStyle(color: Color(0xFF1A60FF))),
+                        child: Text("Create Account", style: TextStyle(color: const Color(0xFF1A60FF), fontSize: Responsive.fontSize(context, 14))),
                       )
                     ],
                   ),

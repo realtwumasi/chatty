@@ -74,7 +74,6 @@ class _CreateGroupPageState extends ConsumerState<CreateGroupPage> {
     final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
     final textColor = Theme.of(context).colorScheme.onSurface;
     final inputFillColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
-    // Fix: Force non-nullable Color for use in BorderSide
     final Color hintColor = isDark ? Colors.grey[400]! : Colors.grey[500]!;
     final isDesktop = Responsive.isDesktop(context);
 
@@ -125,12 +124,11 @@ class _CreateGroupPageState extends ConsumerState<CreateGroupPage> {
         maxWidth: 700,
         child: Column(
           children: [
-            // Group Name Input
             Padding(
               padding: EdgeInsets.all(16.w),
               child: TextField(
                 controller: _groupNameController,
-                autofocus: isDesktop, // Focus on load for desktop
+                autofocus: isDesktop,
                 onChanged: (val) => setState(() {}),
                 style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16)),
                 decoration: InputDecoration(
@@ -147,7 +145,6 @@ class _CreateGroupPageState extends ConsumerState<CreateGroupPage> {
               ),
             ),
 
-            // Search Members
             Padding(
               padding: EdgeInsets.symmetric(horizontal: 16.w),
               child: TextField(
@@ -179,7 +176,7 @@ class _CreateGroupPageState extends ConsumerState<CreateGroupPage> {
 
             Expanded(
               child: filteredUsers.isEmpty
-                  ? Center(child: Text("No users found", style: TextStyle(color: hintColor)))
+                  ? Center(child: Text("No users found", style: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 16))))
                   : Scrollbar(
                 thumbVisibility: isDesktop,
                 child: ListView.builder(

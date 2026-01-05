@@ -21,7 +21,6 @@ class _NewMessagePageState extends ConsumerState<NewMessagePage> {
   @override
   void initState() {
     super.initState();
-    // Ensure we have the latest user list
     ref.read(chatRepositoryProvider).fetchUsers();
   }
 
@@ -31,7 +30,6 @@ class _NewMessagePageState extends ConsumerState<NewMessagePage> {
     super.dispose();
   }
 
-  // Consistent color generation
   Color _getUserColor(String username) {
     final colors = [
       Colors.orange, Colors.purple, Colors.pink, Colors.teal,
@@ -80,7 +78,6 @@ class _NewMessagePageState extends ConsumerState<NewMessagePage> {
         maxWidth: 700,
         child: Column(
           children: [
-            // Search Bar
             Padding(
               padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
               child: Container(
@@ -90,7 +87,7 @@ class _NewMessagePageState extends ConsumerState<NewMessagePage> {
                 ),
                 child: TextField(
                   controller: _searchController,
-                  autofocus: isDesktop, // Focus on desktop for quick typing
+                  autofocus: isDesktop,
                   onChanged: (val) => setState(() => _searchQuery = val),
                   style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16)),
                   decoration: InputDecoration(
@@ -104,7 +101,6 @@ class _NewMessagePageState extends ConsumerState<NewMessagePage> {
               ),
             ),
 
-            // Create Group Option
             InkWell(
               onTap: () {
                 Navigator.pushReplacement(
@@ -118,7 +114,7 @@ class _NewMessagePageState extends ConsumerState<NewMessagePage> {
                   children: [
                     Container(
                       width: 48.w,
-                      height: 48.w, // Square dimensions for circle
+                      height: 48.w,
                       decoration: const BoxDecoration(
                         color: Color(0xFF1A60FF),
                         shape: BoxShape.circle,
@@ -141,13 +137,12 @@ class _NewMessagePageState extends ConsumerState<NewMessagePage> {
 
             Divider(height: 1, thickness: 0.5, color: isDark ? Colors.grey[800] : Colors.grey[300]),
 
-            // User List
             Expanded(
               child: filteredUsers.isEmpty
                   ? Center(
                 child: Text(
                   "No users found",
-                  style: TextStyle(color: hintColor, fontSize: 16.sp),
+                  style: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 16)),
                 ),
               )
                   : Scrollbar(
@@ -183,19 +178,12 @@ class _NewMessagePageState extends ConsumerState<NewMessagePage> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       onTap: () async {
-                        // Use repo method to find or create chat
                         final chat = await ref.read(chatRepositoryProvider).startPrivateChat(user);
 
                         if (mounted) {
                           if (isDesktop) {
-                            // On desktop, we likely want to just close this modal and
-                            // let the main layout select the chat.
-                            // However, since this page is pushed, we pop it.
                             Navigator.pop(context);
-                            // NOTE: In a split view, you might want to signal the Home Page to select this chat.
-                            // But since startPrivateChat updates the provider, the HomePage list will update.
                           } else {
-                            // On mobile, replace this page with the chat page
                             Navigator.pushReplacement(
                               context,
                               MaterialPageRoute(builder: (context) => ChatPage(chat: chat)),

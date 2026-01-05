@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../chat_page/chat_page.dart';
@@ -23,13 +24,15 @@ class _HomePageState extends ConsumerState<HomePage> {
   Chat? _selectedChat;
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _searchFocusNode = FocusNode();
+  final FocusNode _listFocusNode = FocusNode(); // Focus node for list navigation
+
   String _searchQuery = "";
   int _selectedFilterIndex = 0; // 0: All, 1: Private, 2: Group
 
   @override
   void initState() {
     super.initState();
-    // Initial fetch to sync state
     ref.read(chatRepositoryProvider).fetchChats();
   }
 
@@ -37,6 +40,8 @@ class _HomePageState extends ConsumerState<HomePage> {
   void dispose() {
     _searchController.dispose();
     _scrollController.dispose();
+    _searchFocusNode.dispose();
+    _listFocusNode.dispose();
     super.dispose();
   }
 
@@ -44,8 +49,10 @@ class _HomePageState extends ConsumerState<HomePage> {
     if (Responsive.isDesktop(context)) {
       setState(() {
         _selectedChat = chat;
-        chat.unreadCount = 0; // Mark read visually
+        chat.unreadCount = 0;
       });
+      // Ensure list keeps focus for keyboard nav unless user clicks elsewhere
+      _listFocusNode.requestFocus();
     } else {
       if (chat.isGroup) {
         Navigator.push(
@@ -93,18 +100,80 @@ class _HomePageState extends ConsumerState<HomePage> {
     );
   }
 
+  // --- Keyboard Handling ---
+
+  void _handleKeyNavigation(RawKeyEvent event, List<Chat> displayChats) {
+    if (event is! RawKeyDownEvent) return;
+
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      _moveSelection(displayChats, 1);
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      _moveSelection(displayChats, -1);
+    }
+  }
+
+  void _moveSelection(List<Chat> chats, int direction) {
+    if (chats.isEmpty) return;
+
+    int currentIndex = -1;
+    if (_selectedChat != null) {
+      currentIndex = chats.indexWhere((c) => c.id == _selectedChat!.id);
+    }
+
+    int newIndex = currentIndex + direction;
+    if (newIndex < 0) newIndex = 0;
+    if (newIndex >= chats.length) newIndex = chats.length - 1;
+
+    if (newIndex != currentIndex) {
+      _onChatSelected(chats[newIndex]);
+      _scrollToIndex(newIndex);
+    }
+  }
+
+  void _scrollToIndex(int index) {
+    // Simple estimation: 72 is approx tile height
+    const itemHeight = 72.0;
+    final targetOffset = index * itemHeight;
+
+    if (_scrollController.hasClients) {
+      // If target is out of view, scroll to it
+      if (targetOffset < _scrollController.offset) {
+        _scrollController.animateTo(targetOffset, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+      } else if (targetOffset > _scrollController.offset + _scrollController.position.viewportDimension - itemHeight) {
+        _scrollController.animateTo(targetOffset - _scrollController.position.viewportDimension + itemHeight + 20, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isConnected = ref.watch(wsConnectionProvider);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final content = _buildMobileLayout(isConnected);
-        if (constraints.maxWidth >= 900) {
-          return _buildDesktopLayout(isConnected);
-        }
-        return content;
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true): () {
+          _searchFocusNode.requestFocus();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyN, control: true): () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const NewMessagePage()));
+        },
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          FocusScope.of(context).unfocus();
+          _listFocusNode.requestFocus();
+        },
       },
+      child: Focus(
+        autofocus: true, // Ensure we catch shortcuts even if no specific widget focused
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final content = _buildMobileLayout(isConnected);
+            if (constraints.maxWidth >= 900) {
+              return _buildDesktopLayout(isConnected);
+            }
+            return content;
+          },
+        ),
+      ),
     );
   }
 
@@ -120,11 +189,11 @@ class _HomePageState extends ConsumerState<HomePage> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.wifi_off, color: Colors.white, size: 14.sp),
+            Icon(Icons.wifi_off, color: Colors.white, size: Responsive.fontSize(context, 14)),
             SizedBox(width: 8.w),
             Text(
               "Waiting for connection...",
-              style: TextStyle(color: Colors.white, fontSize: 12.sp, fontWeight: FontWeight.bold),
+              style: TextStyle(color: Colors.white, fontSize: Responsive.fontSize(context, 12), fontWeight: FontWeight.bold),
             ),
           ],
         ),
@@ -142,11 +211,12 @@ class _HomePageState extends ConsumerState<HomePage> {
         ),
         child: TextField(
           controller: _searchController,
+          focusNode: _searchFocusNode,
           onChanged: (value) => setState(() => _searchQuery = value),
-          style: TextStyle(fontSize: 14.sp),
+          style: TextStyle(fontSize: Responsive.fontSize(context, 14)),
           decoration: InputDecoration(
-              hintText: "Search conversations...",
-              hintStyle: TextStyle(color: Colors.grey, fontSize: 14.sp),
+              hintText: "Search (Ctrl+F)...",
+              hintStyle: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 14)),
               prefixIcon: const Icon(Icons.search, color: Colors.grey),
               border: InputBorder.none,
               contentPadding: EdgeInsets.symmetric(vertical: 12.h),
@@ -154,6 +224,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                   ? IconButton(icon: const Icon(Icons.clear, color: Colors.grey), onPressed: () {
                 _searchController.clear();
                 setState(() => _searchQuery = "");
+                _listFocusNode.requestFocus();
               })
                   : null
           ),
@@ -191,9 +262,9 @@ class _HomePageState extends ConsumerState<HomePage> {
         child: Text(
           label,
           style: TextStyle(
-              color: isSelected ? Colors.white : (isDark ? Colors.grey[300] : Colors.grey[700]),
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              fontSize: 13.sp
+            color: isSelected ? Colors.white : (isDark ? Colors.grey[300] : Colors.grey[700]),
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            fontSize: Responsive.fontSize(context, 13),
           ),
         ),
       ),
@@ -336,6 +407,34 @@ class _HomePageState extends ConsumerState<HomePage> {
     );
   }
 
+  void _showContextMenu(BuildContext context, Chat chat, Offset position) {
+    final RenderBox overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+
+    showMenu(
+      context: context,
+      position: RelativeRect.fromRect(
+        position & const Size(40, 40),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        if (chat.isGroup)
+          PopupMenuItem(
+            child: const Text('Leave Group', style: TextStyle(color: Colors.red)),
+            onTap: () {
+              ref.read(chatRepositoryProvider).leaveGroup(chat.id);
+              if (_selectedChat?.id == chat.id) {
+                setState(() => _selectedChat = null);
+              }
+            },
+          ),
+        const PopupMenuItem(
+          value: 'read',
+          child: Text('Mark as Read'),
+        ),
+      ],
+    );
+  }
+
   Widget _buildChatList({required bool isDesktop}) {
     final chats = ref.watch(chatListProvider);
     final isLoading = ref.watch(isLoadingProvider);
@@ -359,20 +458,31 @@ class _HomePageState extends ConsumerState<HomePage> {
       return Center(child: Text("No chats yet", style: TextStyle(color: Colors.grey[400])));
     }
 
-    return Scrollbar(
-      controller: _scrollController,
-      thumbVisibility: isDesktop,
-      child: ListView.builder(
+    // Wrap in RawKeyboardListener for desktop navigation
+    return RawKeyboardListener(
+      focusNode: _listFocusNode,
+      onKey: (event) => _handleKeyNavigation(event, displayChats),
+      child: Scrollbar(
         controller: _scrollController,
-        itemCount: displayChats.length,
-        itemBuilder: (context, index) {
-          final chat = displayChats[index];
-          return MessageTile(
-            chat: chat,
-            isSelected: _selectedChat?.id == chat.id,
-            onTap: () => _onChatSelected(chat),
-          );
-        },
+        thumbVisibility: isDesktop,
+        child: ListView.builder(
+          controller: _scrollController,
+          itemCount: displayChats.length,
+          itemBuilder: (context, index) {
+            final chat = displayChats[index];
+            return GestureDetector(
+              onSecondaryTapDown: (details) {
+                // Desktop Right-Click Menu
+                _showContextMenu(context, chat, details.globalPosition);
+              },
+              child: MessageTile(
+                chat: chat,
+                isSelected: _selectedChat?.id == chat.id,
+                onTap: () => _onChatSelected(chat),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -405,7 +515,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 Navigator.push(context, MaterialPageRoute(builder: (context) => const NewMessagePage()));
               },
               icon: const Icon(Icons.add_comment_outlined, color: Color(0xFF1A60FF), size: 28),
-              tooltip: "New Chat",
+              tooltip: "New Chat (Ctrl+N)",
             ),
           )
       ],
@@ -433,92 +543,35 @@ class _HomePageState extends ConsumerState<HomePage> {
       backgroundColor: drawerColor,
       child: Column(
         children: [
-          // Custom Header
-          Container(
-            width: double.infinity,
-            padding: EdgeInsets.fromLTRB(20.w, 60.h, 20.w, 20.h),
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF1A60FF), Color(0xFF003CBF)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+          UserAccountsDrawerHeader(
+            decoration: const BoxDecoration(color: Color(0xFF1A60FF)),
+            currentAccountPicture: CircleAvatar(
+              backgroundColor: Colors.white,
+              child: Text(
+                currentUser.name.isNotEmpty ? currentUser.name[0] : '?',
+                style: TextStyle(fontSize: Responsive.fontSize(context, 24), fontWeight: FontWeight.bold, color: const Color(0xFF1A60FF)),
               ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CircleAvatar(
-                  radius: 35.r,
-                  backgroundColor: Colors.white,
-                  child: Text(
-                    currentUser.name.isNotEmpty ? currentUser.name[0].toUpperCase() : '?',
-                    style: TextStyle(
-                      fontSize: 30.sp,
-                      fontWeight: FontWeight.bold,
-                      color: const Color(0xFF1A60FF),
-                    ),
-                  ),
-                ),
-                SizedBox(height: 16.h),
-                Text(
-                  currentUser.name,
-                  style: TextStyle(
-                    fontSize: 22.sp,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                SizedBox(height: 4.h),
-                Text(
-                  currentUser.email,
-                  style: TextStyle(
-                    fontSize: 14.sp,
-                    color: Colors.white70,
-                  ),
-                ),
-              ],
+            accountName: Text(currentUser.name, style: TextStyle(fontSize: Responsive.fontSize(context, 18), fontWeight: FontWeight.bold)),
+            accountEmail: Text(currentUser.email),
+          ),
+          ListTile(
+            leading: Icon(ref.watch(themeProvider) ? Icons.dark_mode : Icons.light_mode, color: textColor),
+            title: Text("Dark Mode", style: TextStyle(color: textColor)),
+            trailing: Switch(
+                value: ref.watch(themeProvider),
+                activeColor: const Color(0xFF1A60FF),
+                onChanged: (val) => repo.toggleTheme()
             ),
           ),
-
-          Expanded(
-            child: ListView(
-              padding: EdgeInsets.zero,
-              children: [
-                Padding(
-                  padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 8.h),
-                  child: Text("Preferences", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 12.sp)),
-                ),
-                ListTile(
-                  leading: Icon(ref.watch(themeProvider) ? Icons.dark_mode : Icons.light_mode, color: textColor),
-                  title: Text("Dark Mode", style: TextStyle(color: textColor)),
-                  trailing: Switch(
-                      value: ref.watch(themeProvider),
-                      activeColor: const Color(0xFF1A60FF),
-                      onChanged: (val) => repo.toggleTheme()
-                  ),
-                ),
-                Divider(color: isDark ? Colors.grey[800] : Colors.grey[300]),
-                Padding(
-                  padding: EdgeInsets.fromLTRB(16.w, 8.h, 16.w, 8.h),
-                  child: Text("Account", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 12.sp)),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.logout, color: Colors.red),
-                  title: const Text("Logout", style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
-                  onTap: _handleLogout,
-                ),
-              ],
-            ),
+          const Spacer(),
+          Divider(color: isDark ? Colors.grey[800] : Colors.grey[300]),
+          ListTile(
+            leading: const Icon(Icons.logout, color: Colors.red),
+            title: const Text("Logout", style: TextStyle(color: Colors.red)),
+            onTap: _handleLogout,
           ),
-
-          // Footer
-          Padding(
-            padding: EdgeInsets.all(16.w),
-            child: Text(
-              "Version 1.0.0",
-              style: TextStyle(color: Colors.grey, fontSize: 12.sp),
-            ),
-          ),
+          SizedBox(height: 20.h),
         ],
       ),
     );

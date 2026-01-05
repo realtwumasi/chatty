@@ -53,7 +53,6 @@ class _CreateAccountState extends ConsumerState<CreateAccount> {
   @override
   Widget build(BuildContext context) {
     final isLoading = ref.watch(isLoadingProvider);
-    // ... UI Code remains similar ...
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
     final textColor = Theme.of(context).colorScheme.onSurface;
@@ -92,11 +91,20 @@ class _CreateAccountState extends ConsumerState<CreateAccount> {
                         ],
                         totalRepeatCount: 1,
                       ),
+                      SizedBox(height: 8.h),
+                      Text(
+                        "Create Your Account",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w400,
+                          fontSize: Responsive.fontSize(context, 16),
+                          color: isDark ? Colors.grey[400] : Colors.grey.shade600,
+                        ),
+                      ),
                       SizedBox(height: 40.h),
 
                       TextFormField(
                         controller: _username,
-                        style: TextStyle(color: textColor),
+                        style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16)),
                         autovalidateMode: AutovalidateMode.onUserInteraction,
                         validator: (val) {
                           if (val == null || val.isEmpty) return "Required";
@@ -108,7 +116,7 @@ class _CreateAccountState extends ConsumerState<CreateAccount> {
                         },
                         decoration: InputDecoration(
                           labelText: "Username",
-                          labelStyle: TextStyle(color: hintColor),
+                          labelStyle: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14)),
                           filled: true,
                           fillColor: inputFillColor,
                           enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
@@ -119,11 +127,11 @@ class _CreateAccountState extends ConsumerState<CreateAccount> {
 
                       TextFormField(
                         controller: _email,
-                        style: TextStyle(color: textColor),
+                        style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16)),
                         validator: (val) => !val!.contains('@') ? "Invalid Email" : null,
                         decoration: InputDecoration(
                           labelText: "Email",
-                          labelStyle: TextStyle(color: hintColor),
+                          labelStyle: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14)),
                           filled: true,
                           fillColor: inputFillColor,
                           enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
@@ -135,11 +143,11 @@ class _CreateAccountState extends ConsumerState<CreateAccount> {
                       TextFormField(
                         controller: _password,
                         obscureText: true,
-                        style: TextStyle(color: textColor),
+                        style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16)),
                         validator: (val) => val!.length < 1 ? "Required" : null,
                         decoration: InputDecoration(
                           labelText: "Password",
-                          labelStyle: TextStyle(color: hintColor),
+                          labelStyle: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14)),
                           filled: true,
                           fillColor: inputFillColor,
                           enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
@@ -159,7 +167,12 @@ class _CreateAccountState extends ConsumerState<CreateAccount> {
                             ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                             : Text("Create Account", style: TextStyle(color: Colors.white, fontSize: Responsive.fontSize(context, 16))),
                       ),
-                      // ...
+                      SizedBox(height: 16.h),
+
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: Text("Already Have an account? Log in", style: TextStyle(color: const Color(0xFF1A60FF), fontSize: Responsive.fontSize(context, 14))),
+                      )
                     ],
                   ),
                 ),

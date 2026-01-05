@@ -56,7 +56,6 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
 
   void _scrollListener() {
     if (_scrollController.hasClients) {
-      // Show button if we are more than 300 pixels from the bottom
       final distanceToBottom = _scrollController.position.maxScrollExtent - _scrollController.offset;
       final show = distanceToBottom > 300;
       if (show != _showScrollToBottom) {
@@ -110,9 +109,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
       final replyContext = _replyingTo;
 
       _messageController.clear();
-      if (mounted) {
-        setState(() => _replyingTo = null);
-      }
+      setState(() => _replyingTo = null);
 
       repo.sendMessage(
           _chatId,
@@ -124,7 +121,6 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
       repo.sendTyping(_chatId, true, false);
       _scrollToBottom();
 
-      // Keep focus on desktop for rapid messaging
       if (widget.isDesktop) {
         _inputFocusNode.requestFocus();
       }
@@ -142,7 +138,6 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   void _scrollToBottom({bool animated = true}) {
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
-        // Tiny delay to ensure layout passes are done for new bubble height
         Future.delayed(const Duration(milliseconds: 50), () {
           if (_scrollController.hasClients) {
             if (animated) {
@@ -209,7 +204,6 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
           icon: Icon(Icons.arrow_back, color: textColor),
           onPressed: () => Navigator.pop(context),
         ),
-        // Optimization: Extracted title to separate widget to prevent full page rebuilds on typing status change
         title: InkWell(
           onTap: () => _showGroupInfo(_chatId),
           child: _GroupChatTitle(chat: currentChat, chatId: _chatId, textColor: textColor),
@@ -242,28 +236,25 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                               color: isDark ? Colors.grey[800] : Colors.grey[200],
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            child: Text(message.text, style: TextStyle(fontSize: 12.sp, color: isDark ? Colors.grey[300] : Colors.grey[800])),
+                            child: Text(message.text, style: TextStyle(fontSize: Responsive.fontSize(context, 12), color: isDark ? Colors.grey[300] : Colors.grey[800])),
                           ),
                         );
                       }
 
-                      // Optimization: Smart Grouping and Date Headers
                       bool showName = true;
                       bool showDate = false;
 
                       if (index > 0) {
                         final prevMessage = currentChat.messages[index - 1];
-                        // Hide name if previous message was from same sender AND not system
                         if (prevMessage.senderId == message.senderId && !prevMessage.isSystem) {
                           showName = false;
                         }
-                        // Show date if day changed
                         if (!_isSameDay(prevMessage.timestamp, message.timestamp)) {
                           showDate = true;
-                          showName = true; // Reset name visibility on new day
+                          showName = true;
                         }
                       } else {
-                        showDate = true; // Always show date for first message
+                        showDate = true;
                       }
 
                       return Column(
@@ -297,7 +288,6 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                     },
                   ),
                 ),
-                // Jump to Bottom FAB
                 if (_showScrollToBottom)
                   Positioned(
                     bottom: 20.h,
@@ -324,8 +314,8 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(_replyingTo!.senderName, style: TextStyle(color: const Color(0xFF1A60FF), fontWeight: FontWeight.bold)),
-                        Text(_replyingTo!.text, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.grey)),
+                        Text(_replyingTo!.senderName, style: TextStyle(color: const Color(0xFF1A60FF), fontWeight: FontWeight.bold, fontSize: Responsive.fontSize(context, 14))),
+                        Text(_replyingTo!.text, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 14))),
                       ],
                     ),
                   ),
@@ -353,10 +343,10 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                       focusNode: _inputFocusNode,
                       autofocus: isDesktop,
                       onChanged: _onTextChanged,
-                      style: TextStyle(color: textColor),
+                      style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16)),
                       decoration: InputDecoration(
                         hintText: "Message ${currentChat.name}...",
-                        hintStyle: const TextStyle(color: Colors.grey),
+                        hintStyle: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 14)),
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                       ),
@@ -413,14 +403,13 @@ class _DateHeader extends StatelessWidget {
         ),
         child: Text(
           text,
-          style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w500, color: isDark ? Colors.grey[300] : Colors.grey[600]),
+          style: TextStyle(fontSize: Responsive.fontSize(context, 12), fontWeight: FontWeight.w500, color: isDark ? Colors.grey[300] : Colors.grey[600]),
         ),
       ),
     );
   }
 }
 
-// Optimization: Separated title widget to isolate typing status rebuilds
 class _GroupChatTitle extends ConsumerWidget {
   final Chat chat;
   final String chatId;
@@ -445,13 +434,13 @@ class _GroupChatTitle extends ConsumerWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(chat.name, style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 16)),
+            Text(chat.name, style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: Responsive.fontSize(context, 16))),
             if (typingText.isNotEmpty)
-              Text(typingText, style: TextStyle(color: const Color(0xFF1A60FF), fontSize: 12, fontStyle: FontStyle.italic))
+              Text(typingText, style: TextStyle(color: const Color(0xFF1A60FF), fontSize: Responsive.fontSize(context, 12), fontStyle: FontStyle.italic))
             else
               Text(
                 "${chat.participants.length} members",
-                style: const TextStyle(color: Colors.grey, fontSize: 12),
+                style: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 12)),
               ),
           ],
         ),
@@ -505,7 +494,7 @@ class _GroupMessageBubble extends StatelessWidget {
           ConstrainedBox(
             constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
             child: Container(
-              margin: EdgeInsets.only(top: 2.h, bottom: 2.h), // Tight spacing for groups
+              margin: EdgeInsets.symmetric(vertical: 4.h),
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: bubbleColor,
@@ -523,7 +512,6 @@ class _GroupMessageBubble extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Reply Context
                   if (message.replyToId != null)
                     Container(
                       margin: EdgeInsets.only(bottom: 6),
@@ -536,8 +524,8 @@ class _GroupMessageBubble extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(message.replyToSender ?? "Unknown", style: TextStyle(color: isMe ? Colors.white70 : senderColor, fontWeight: FontWeight.bold, fontSize: 11)),
-                          Text(message.replyToContent ?? "...", style: TextStyle(color: isMe ? Colors.white60 : (isDark ? Colors.grey[300] : Colors.black54), fontSize: 11, overflow: TextOverflow.ellipsis), maxLines: 1),
+                          Text(message.replyToSender ?? "Unknown", style: TextStyle(color: isMe ? Colors.white70 : senderColor, fontWeight: FontWeight.bold, fontSize: Responsive.fontSize(context, 11))),
+                          Text(message.replyToContent ?? "...", style: TextStyle(color: isMe ? Colors.white60 : (isDark ? Colors.grey[300] : Colors.black54), fontSize: Responsive.fontSize(context, 11), overflow: TextOverflow.ellipsis), maxLines: 1),
                         ],
                       ),
                     ),
@@ -547,7 +535,7 @@ class _GroupMessageBubble extends StatelessWidget {
                       padding: const EdgeInsets.only(bottom: 4.0),
                       child: Text(
                         message.senderName,
-                        style: TextStyle(fontWeight: FontWeight.bold, color: senderColor, fontSize: 13.sp),
+                        style: TextStyle(fontWeight: FontWeight.bold, color: senderColor, fontSize: Responsive.fontSize(context, 13)),
                       ),
                     ),
                   Wrap(
@@ -555,7 +543,7 @@ class _GroupMessageBubble extends StatelessWidget {
                     crossAxisAlignment: WrapCrossAlignment.end,
                     spacing: 8,
                     children: [
-                      Text(message.text, style: TextStyle(color: textColor, fontSize: 15.sp)),
+                      Text(message.text, style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 15))),
                       Padding(
                         padding: const EdgeInsets.only(top: 4.0),
                         child: Row(
@@ -563,7 +551,7 @@ class _GroupMessageBubble extends StatelessWidget {
                           children: [
                             Text(
                               "${message.timestamp.hour.toString().padLeft(2, '0')}:${message.timestamp.minute.toString().padLeft(2, '0')}",
-                              style: TextStyle(color: timeColor, fontSize: 10.sp),
+                              style: TextStyle(color: timeColor, fontSize: Responsive.fontSize(context, 10)),
                             ),
                             if (isMe) ...[
                               const SizedBox(width: 4),
@@ -602,7 +590,6 @@ class _GroupInfoContent extends ConsumerWidget {
     final currentUser = ref.watch(userProvider);
     final chatList = ref.watch(chatListProvider);
 
-    // Find the chat object dynamically so UI updates when members change
     final chat = chatList.firstWhere((c) => c.id == chatId, orElse: () => Chat(id: chatId, name: 'Unknown', isGroup: true, messages: [], participants: []));
 
     return Padding(
@@ -613,7 +600,7 @@ class _GroupInfoContent extends ConsumerWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text("Group Members", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Text("Group Members", style: TextStyle(fontSize: Responsive.fontSize(context, 18), fontWeight: FontWeight.bold)),
               IconButton(
                 icon: const Icon(Icons.person_add, color: Color(0xFF1A60FF)),
                 onPressed: () {
@@ -635,7 +622,7 @@ class _GroupInfoContent extends ConsumerWidget {
               final isMe = user.id == currentUser?.id;
               return ListTile(
                 leading: CircleAvatar(child: Text(user.name.isNotEmpty ? user.name[0] : '?')),
-                title: Text(user.name + (isMe ? " (You)" : "")),
+                title: Text(user.name + (isMe ? " (You)" : ""), style: TextStyle(fontSize: Responsive.fontSize(context, 16))),
                 trailing: PopupMenuButton<String>(
                   onSelected: (value) async {
                     if (value == 'msg') {
@@ -656,7 +643,7 @@ class _GroupInfoContent extends ConsumerWidget {
                   },
                   itemBuilder: (context) => [
                     if (!isMe) const PopupMenuItem(value: 'msg', child: Text("Message")),
-                    if (!isMe) const PopupMenuItem(value: 'remove', child: Text("Remove", style: TextStyle(color: Colors.red))),
+                    if (!isMe) PopupMenuItem(value: 'remove', child: Text("Remove", style: TextStyle(color: Colors.red, fontSize: Responsive.fontSize(context, 14)))),
                   ],
                 ),
               );
@@ -723,7 +710,7 @@ class _AddMemberDialogState extends ConsumerState<_AddMemberDialog> {
                   final user = filtered[index];
                   return ListTile(
                     leading: CircleAvatar(child: Text(user.name.isNotEmpty ? user.name[0] : '?')),
-                    title: Text(user.name),
+                    title: Text(user.name, style: TextStyle(fontSize: Responsive.fontSize(context, 16))),
                     onTap: () async {
                       try {
                         await ref.read(chatRepositoryProvider).addMemberToGroup(widget.chatId, user.id);
