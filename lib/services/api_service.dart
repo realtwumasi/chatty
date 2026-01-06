@@ -24,6 +24,9 @@ class ApiService {
 
   String? _accessToken;
   String? _refreshToken;
+  
+  String? get accessToken => _accessToken;
+  String? get currentRefreshToken => _refreshToken;
 
   static const String _keyAccess = 'access_token';
   static const String _keyRefresh = 'refresh_token';
@@ -158,6 +161,17 @@ class ApiService {
         headers: _headers,
         body: jsonEncode({'message_ids': messageIds})
     ));
+  }
+
+  // Get Read Receipts
+  Future<List<dynamic>> getReadReceipts(String messageId) async {
+    if (_accessToken == null) await loadTokens();
+    final uri = Uri.parse('$baseUrl/messages/read-receipts/').replace(queryParameters: {'message_id': messageId});
+    final response = await _requestWithRetry(() => http.get(uri, headers: _headers));
+    if (response is Map && response['readers'] != null) {
+      return response['readers'];
+    }
+    return [];
   }
 
   Map<String, String> get _headers {

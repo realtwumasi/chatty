@@ -177,18 +177,27 @@ class ChatRepository {
     if (chat.messages.isEmpty) return;
 
     try {
-      // Find the last incoming message (not from me)
-      final lastIncoming = chat.messages.lastWhere(
-              (m) => !m.isMe,
-          orElse: () => Message(id: '', senderId: '', senderName: '', text: '', timestamp: DateTime.now(), isMe: true)
-      );
+      // Find ALL unread incoming messages
+      final unreadMessages = chat.messages.where((m) => !m.isMe && m.status != MessageStatus.read).toList();
+      
+      if (unreadMessages.isEmpty) return;
 
-      // Send receipt only if we have a valid ID and it's not already marked read locally
-      if (lastIncoming.id.isNotEmpty && lastIncoming.status != MessageStatus.read) {
-        _ws.sendMarkRead(lastIncoming.id);
+      final ids = unreadMessages.map((m) => m.id).toList();
+
+      // 1. Send bulk update to API (Persistence)
+      _api.markMessagesAsRead(ids);
+
+      // 2. Send WebSocket update for the last message (Real-time trigger for others)
+      // The server likely needs just one "read up to this point" or similar, 
+      // but sending the last ID is a good signal for "I've read everything up to here"
+      if (ids.isNotEmpty) {
+         // Sort to find the latest one just in case
+         unreadMessages.sort((a,b) => a.timestamp.compareTo(b.timestamp));
+         final lastId = unreadMessages.last.id;
+         _ws.sendMarkRead(lastId);
       }
     } catch (e) {
-      // Ignore
+      if (kDebugMode) print("Error sending read receipt: $e");
     }
   }
 
@@ -577,6 +586,17 @@ class ChatRepository {
   }
 
   Future<void> logout() async {
+    // 1. Notify Server
+    try {
+      final refresh = _api.currentRefreshToken;
+      if (refresh != null) {
+        await _api.post('/auth/logout/', {'refresh': refresh});
+      }
+    } catch (e) {
+      if (kDebugMode) print("Logout API error: $e");
+    }
+
+    // 2. Clear Local State
     _ref.read(userProvider.notifier).state = null;
     _ref.read(chatListProvider.notifier).state = [];
     _ref.read(allUsersProvider.notifier).state = [];
@@ -587,6 +607,7 @@ class ChatRepository {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_keyUser);
+      // await prefs.remove(_keyChats); // Optional: Keep chats for offline view? User didn't specify. Clearing for security.
       await prefs.remove(_keyChats);
     } catch (_) {}
   }
@@ -625,7 +646,27 @@ class ChatRepository {
     }
   }
 
+  // Helper to merge messages, prioritizing server version (for status updates)
+  List<Message> _mergeMessages(List<Message> local, List<Message> remote) {
+    final Map<String, Message> map = {for (var m in local) m.id: m};
+    for (var m in remote) {
+      // Overwrite local with remote to capture status changes (e.g. read receipts)
+      map[m.id] = m;
+    }
+    final list = map.values.toList();
+    list.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    return list;
+  }
+
   Future<void> fetchChats() async {
+    // DEBUG: Inspect the new /api/chats/ endpoint to see if we can switch to it
+    try {
+       final test = await _api.get('/chats/');
+       if (kDebugMode) print("DEBUG API CHATS: $test");
+    } catch(e) {
+       if (kDebugMode) print("DEBUG API CHATS ERROR: $e");
+    }
+
     try {
       final response = await _api.get('/groups/');
       final List groupData = (response is Map && response.containsKey('results')) ? response['results'] : [];
@@ -638,31 +679,34 @@ class ChatRepository {
       final currentChats = _ref.read(chatListProvider);
       final mergedMap = <String, Chat>{};
 
-      for (var chat in privateChats) {
-        mergedMap[chat.id] = chat;
+      // 1. Process Private Chats (Merge Logic)
+      for (var remoteChat in privateChats) {
+        final local = currentChats.where((c) => c.id == remoteChat.id).firstOrNull;
+        final mergedMessages = _mergeMessages(local?.messages ?? [], remoteChat.messages);
+        
+        mergedMap[remoteChat.id] = Chat(
+          id: remoteChat.id,
+          name: remoteChat.name,
+          isGroup: false,
+          participants: remoteChat.participants,
+          messages: mergedMessages,
+          unreadCount: unreadCounts[remoteChat.id] ?? 0, // Trust API count or 0
+          eventLog: local?.eventLog ?? [],
+          isMember: true,
+        );
       }
 
+      // 2. Process Groups (Merge Logic)
       for (var group in fetchedGroups) {
         final local = currentChats.where((c) => c.id == group.id).firstOrNull;
-
-        List<Message> messages = [];
-        if (local != null) messages = List.from(local.messages);
-
-        if (groupMessagesMap.containsKey(group.id)) {
-          final fetchedMsgs = groupMessagesMap[group.id]!;
-          for (var m in fetchedMsgs) {
-            if (!messages.any((exist) => exist.id == m.id)) {
-              messages.add(m);
-            }
-          }
-          messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-        }
+        final remoteMsgs = groupMessagesMap[group.id] ?? [];
+        final mergedMessages = _mergeMessages(local?.messages ?? [], remoteMsgs);
 
         mergedMap[group.id] = Chat(
           id: group.id,
           name: group.name,
           isGroup: group.isGroup,
-          messages: messages,
+          messages: mergedMessages,
           participants: local?.participants.isNotEmpty == true ? local!.participants : group.participants,
           unreadCount: unreadCounts[group.id] ?? (local?.unreadCount ?? 0),
           eventLog: local?.eventLog ?? [],
@@ -672,23 +716,24 @@ class ChatRepository {
         if (_ws.isConnected.value && group.isMember) _ws.subscribeToGroup(group.id);
       }
 
+      // 3. Keep purely local chats that weren't in the fetch (rare, but maybe failed sync)
       for (var local in currentChats) {
         if (!mergedMap.containsKey(local.id)) {
-          // Update unread count for private chats if available
-          if (unreadCounts.containsKey(local.id)) {
-            mergedMap[local.id] = Chat(
-                id: local.id,
-                name: local.name,
-                isGroup: local.isGroup,
-                messages: local.messages,
-                participants: local.participants,
-                unreadCount: unreadCounts[local.id]!,
-                eventLog: local.eventLog,
-                isMember: local.isMember
-            );
-          } else {
-            mergedMap[local.id] = local;
-          }
+           if (unreadCounts.containsKey(local.id)) {
+              // Even if not in history fetch, update unread count if we have it
+             mergedMap[local.id] = Chat(
+                 id: local.id,
+                 name: local.name,
+                 isGroup: local.isGroup,
+                 messages: local.messages,
+                 participants: local.participants,
+                 unreadCount: unreadCounts[local.id]!,
+                 eventLog: local.eventLog,
+                 isMember: local.isMember
+             );
+           } else {
+             mergedMap[local.id] = local;
+           }
         }
       }
 
@@ -709,10 +754,18 @@ class ChatRepository {
   // New helper to fetch unread counts
   Future<Map<String, int>> _fetchUnreadCounts() async {
     try {
-      final response = await _api.get('/messages/unread_count/');
-      // Handling dynamic response structure (assuming { chat_id: count })
-      if (response is Map<String, dynamic>) {
-        return response.map((key, value) => MapEntry(key, value as int));
+      // FIX: Use plural endpoint as per documentation
+      final response = await _api.get('/messages/unread_counts/');
+      
+      if (response is Map<String, dynamic> && response.containsKey('all_chats')) {
+        final allChats = response['all_chats'];
+        if (allChats is Map<String, dynamic>) {
+          return allChats.map((key, value) {
+             // Handle both string and int from JSON
+             final count = value is int ? value : int.tryParse(value.toString()) ?? 0;
+             return MapEntry(key, count);
+          });
+        }
       }
       return {};
     } catch (e) {
