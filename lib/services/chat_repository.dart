@@ -320,10 +320,8 @@ class ChatRepository {
 
     if (chatIndex != -1) {
       final currentChat = chats[chatIndex];
-      // Dedupe
       if (currentChat.messages.any((m) => m.id == newMessage.id)) return;
 
-      // Filter out temp 'sending' messages if they match content
       final filteredMessages = currentChat.messages.where((m) {
         if (m.isMe && m.status == MessageStatus.sending && m.text == newMessage.text) {
           return false;
@@ -428,16 +426,7 @@ class ChatRepository {
   }
 
   void _handleUserLeft(Map<String, dynamic> payload) {
-    final userId = payload['user_id']?.toString();
-    final currentUser = _ref.read(userProvider);
-
-    if (userId == currentUser?.id) {
-      _updateGroupMembership(payload, "left the group", false);
-      final groupId = payload['group_id']?.toString();
-      if (groupId != null) _ws.unsubscribeFromGroup(groupId);
-    } else {
-      _updateGroupMembership(payload, "left the group", false);
-    }
+    _updateGroupMembership(payload, "left the group", false);
   }
 
   void _handleUserRemoved(Map<String, dynamic> payload) {
@@ -513,6 +502,19 @@ class ChatRepository {
     } else {
       _saveDebounce = Timer(const Duration(seconds: 2), persist);
     }
+  }
+
+  Message _createSystemMessage(String text) {
+    return Message(
+        id: 'sys_${DateTime.now().millisecondsSinceEpoch}_${text.hashCode}',
+        senderId: 'system',
+        senderName: 'System',
+        text: text,
+        timestamp: DateTime.now(),
+        isMe: false,
+        isSystem: true,
+        status: MessageStatus.delivered
+    );
   }
 
   // --- Actions ---
@@ -661,8 +663,6 @@ class ChatRepository {
     }
   }
 
-  // --- RESTORED MISSING METHODS ---
-
   Future<Map<String, List<Message>>> _fetchRecentGroupMessages() async {
     try {
       final response = await _api.get('/messages/', params: {
@@ -751,8 +751,6 @@ class ChatRepository {
     }
   }
 
-  // ---
-
   Future<void> fetchMessagesForChat(String chatId, bool isGroup) async {
     try {
       if (isGroup) {
@@ -778,7 +776,6 @@ class ChatRepository {
         final newMsgs = data.map((e) => Message.fromJson(e, currentUser.id)).toList();
         newMsgs.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
-        // SMART MERGE: Check local messages to preserve 'read' status
         final currentMessages = chats[chatIndex].messages;
         final mergedMessages = <Message>[];
 
@@ -857,20 +854,6 @@ class ChatRepository {
     } catch (e) {
       if (kDebugMode) print("Fetch group members error: $e");
     }
-  }
-
-  // Fixed: Added missing helper method
-  Message _createSystemMessage(String text) {
-    return Message(
-        id: 'sys_${DateTime.now().millisecondsSinceEpoch}_${text.hashCode}',
-        senderId: 'system',
-        senderName: 'System',
-        text: text,
-        timestamp: DateTime.now(),
-        isMe: false,
-        isSystem: true,
-        status: MessageStatus.delivered
-    );
   }
 
   Future<Chat> startPrivateChat(User otherUser) async {
@@ -1056,7 +1039,8 @@ class ChatRepository {
       await _api.post('/groups/$chatId/leave/', {});
     } catch (e) {
       if (kDebugMode) print("Error leaving group: $e");
-      await fetchChats(); // Revert state
+      // Revert if API call failed
+      await fetchChats();
       rethrow;
     }
   }
@@ -1086,8 +1070,7 @@ class ChatRepository {
 
   Future<void> removeMemberFromGroup(String groupId, String userId) async {
     try {
-      // Trying standard delete
-      await _api.delete('/groups/$groupId/members/$userId/');
+      await _api.post('/groups/$groupId/remove_member/', {'user_id': userId});
       await fetchGroupMembers(groupId);
     } catch (e) {
       rethrow;

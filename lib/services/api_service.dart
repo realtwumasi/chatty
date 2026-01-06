@@ -133,6 +133,19 @@ class ApiService {
     return _requestWithRetry(() => http.delete(uri, headers: _headers));
   }
 
+  // Added MARK READ method (Bulk)
+  Future<void> markMessagesAsRead(List<String> messageIds) async {
+    if (messageIds.isEmpty) return;
+    if (_accessToken == null) await loadTokens();
+
+    final uri = Uri.parse('$baseUrl/messages/mark_read/');
+    await _requestWithRetry(() => http.post(
+        uri,
+        headers: _headers,
+        body: jsonEncode({'message_ids': messageIds})
+    ));
+  }
+
   Map<String, String> get _headers {
     final headers = {
       'Content-Type': 'application/json',
