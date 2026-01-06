@@ -1,11 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as status;
 
 class WebSocketService {
   WebSocketChannel? _channel;
+// ... (lines 9-27 omitted for brevity in thought process, but tool needs exact match logic)
+// I will target the imports and the connect method separately or together if close.
+// They are far apart. I should use `multi_replace_file_content` or two `replace_file_content` calls.
+// Since `replace_file_content` is "SINGLE CONTIGUOUS block", I must use `multi_replace_file_content` or two calls.
+// Use multi_replace_file_content.
   StreamSubscription? _subscription;
   Timer? _pingTimer;
   Timer? _reconnectTimer;
@@ -18,19 +24,32 @@ class WebSocketService {
 
   // Connection State
   final ValueNotifier<bool> isConnected = ValueNotifier(false);
+  final ValueNotifier<String?> lastError = ValueNotifier(null);
 
   void connect(String token) {
     if (_channel != null) return;
     _lastToken = token;
     _isDisconnecting = false;
 
-    // FIX: Updated to use the /dms/ws endpoint to match the new API structure
-    final uri = Uri.parse('wss://postumbonal-monatomic-cecelia.ngrok-free.dev/dms/ws?token=$token');
+    // FIX: Updated to use the /ws endpoint as per documentation
+    final uri = Uri.parse('wss://postumbonal-monatomic-cecelia.ngrok-free.dev/ws').replace(queryParameters: {
+      'token': token,
+    });
 
     try {
       if (kDebugMode) print('WS: Connecting to $uri');
-      _channel = WebSocketChannel.connect(uri);
+      // FIX: Add Origin and User-Agent headers which are often required by backends
+      _channel = IOWebSocketChannel.connect(
+        uri, 
+        headers: {
+          'ngrok-skip-browser-warning': 'true',
+          'Origin': 'https://postumbonal-monatomic-cecelia.ngrok-free.dev',
+          'User-Agent': 'ChattyApp/1.0',
+        },
+        pingInterval: const Duration(seconds: 30),
+      );
       isConnected.value = true;
+      lastError.value = null;
 
       _subscription = _channel!.stream.listen(
             (message) {
@@ -59,20 +78,24 @@ class WebSocketService {
           }
         },
         onDone: () {
-          print('WS: Closed by server');
+          final reason = 'Closed: ${_channel?.closeCode} ${_channel?.closeReason}';
+          print('WS: $reason');
+          lastError.value = reason;
           isConnected.value = false;
           _cleanup();
           _attemptReconnect();
         },
         onError: (error) {
-          print('WS Error: $error');
+          final reason = 'Error: $error';
+          print('WS: $reason');
+          lastError.value = reason;
           isConnected.value = false;
           _cleanup();
           _attemptReconnect();
         },
       );
 
-      _startHeartbeat();
+      // _startHeartbeat();
     } catch (e) {
       print('WS Connection Error: $e');
       isConnected.value = false;

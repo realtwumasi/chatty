@@ -11,6 +11,8 @@ import 'api_service.dart';
 // --- Providers ---
 
 final chatRepositoryProvider = Provider((ref) => ChatRepository(ref));
+// Add global access to WS service for debugging
+final webSocketServiceProvider = Provider((ref) => ref.read(chatRepositoryProvider).wsService);
 
 final userProvider = StateProvider<User?>((ref) => null);
 final chatListProvider = StateProvider<List<Chat>>((ref) => []);
@@ -27,6 +29,7 @@ class ChatRepository {
   final Ref _ref;
   final ApiService _api = ApiService();
   final WebSocketService _ws = WebSocketService();
+  WebSocketService get wsService => _ws;
 
   final Map<String, Timer> _typingTimers = {};
   String? _activeChatId;
@@ -186,9 +189,12 @@ class ChatRepository {
 
   // --- WebSocket Logic ---
 
+  StreamSubscription? _wsSubscription;
+
   void _initWebSocket(String token) {
+    _wsSubscription?.cancel();
     _ws.connect(token);
-    _ws.events.listen(_handleWebSocketEvent);
+    _wsSubscription = _ws.events.listen(_handleWebSocketEvent);
   }
 
   void _handleWebSocketEvent(Map<String, dynamic> event) {
@@ -569,6 +575,8 @@ class ChatRepository {
     _ref.read(userProvider.notifier).state = null;
     _ref.read(chatListProvider.notifier).state = [];
     _ref.read(allUsersProvider.notifier).state = [];
+    _wsSubscription?.cancel();
+    _wsSubscription = null;
     _ws.disconnect();
     await _api.clearTokens();
     try {
