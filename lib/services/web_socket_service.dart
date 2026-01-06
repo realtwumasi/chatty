@@ -24,10 +24,11 @@ class WebSocketService {
     _lastToken = token;
     _isDisconnecting = false;
 
-    final uri = Uri.parse('wss://postumbonal-monatomic-cecelia.ngrok-free.dev/ws?token=$token');
+    // FIX: Updated to use the /dms/ws endpoint to match the new API structure
+    final uri = Uri.parse('wss://postumbonal-monatomic-cecelia.ngrok-free.dev/dms/ws?token=$token');
 
     try {
-      if (kDebugMode) print('WS: Connecting...');
+      if (kDebugMode) print('WS: Connecting to $uri');
       _channel = WebSocketChannel.connect(uri);
       isConnected.value = true;
 
@@ -83,7 +84,10 @@ class WebSocketService {
     _isDisconnecting = true;
     _reconnectTimer?.cancel();
     if (_channel != null) {
-      _channel!.sink.close(status.normalClosure);
+      // Use normalClosure (1000) to avoid invalid code errors
+      try {
+        _channel!.sink.close(status.normalClosure);
+      } catch (_) {}
       _cleanup();
     }
     isConnected.value = false;
@@ -148,7 +152,6 @@ class WebSocketService {
     });
   }
 
-  // Updated to match documentation: Expects message_id
   void sendMarkRead(String messageId) {
     send('mark_read', {
       'message_id': messageId,

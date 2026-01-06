@@ -44,6 +44,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     _chatId = widget.chat.id;
     _repository = ref.read(chatRepositoryProvider);
 
+    // Defer state updates to avoid build collisions
     Future.microtask(() {
       _repository.enterChat(_chatId);
       _repository.fetchMessagesForChat(_chatId, false);
@@ -117,7 +118,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       repo.sendMessage(
           _chatId,
           text,
-          false,
+          false, // isGroup = false
           replyTo: replyContext
       );
 
@@ -141,6 +142,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   void _scrollToBottom({bool animated = true}) {
     SchedulerBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
+        // Small delay to ensure layout calculates new content size
         Future.delayed(const Duration(milliseconds: 50), () {
           if (_scrollController.hasClients) {
             if (animated) {
@@ -181,6 +183,26 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     return date1.year == date2.year && date1.month == date2.month && date1.day == date2.day;
   }
 
+  Widget _buildEmptyState(bool isDark) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.chat_bubble_outline, size: 80, color: isDark ? Colors.grey[800] : Colors.grey[200]),
+          SizedBox(height: 16.h),
+          Text(
+            "No messages yet",
+            style: TextStyle(color: Colors.grey, fontSize: 16.sp),
+          ),
+          Text(
+            "Start the conversation!",
+            style: TextStyle(color: Colors.grey, fontSize: 12.sp),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -191,6 +213,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
     final chatList = ref.watch(chatListProvider);
     final currentChat = chatList.firstWhere((c) => c.id == _chatId, orElse: () => widget.chat);
+
+    // Extracted typing logic to _PrivateChatTitle widget to prevent full rebuilds
 
     return Scaffold(
       backgroundColor: backgroundColor,
@@ -212,7 +236,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       body: Column(
         children: [
           Expanded(
-            child: Stack(
+            child: currentChat.messages.isEmpty
+                ? _buildEmptyState(isDark)
+                : Stack(
               children: [
                 Scrollbar(
                   controller: _scrollController,
@@ -319,8 +345,20 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(_replyingTo!.senderName, style: TextStyle(color: const Color(0xFF1A60FF), fontWeight: FontWeight.bold, fontSize: Responsive.fontSize(context, 14))),
-                        Text(_replyingTo!.text, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 14))),
+                        Text(
+                            _replyingTo!.senderName,
+                            style: TextStyle(
+                                color: const Color(0xFF1A60FF),
+                                fontWeight: FontWeight.bold,
+                                fontSize: Responsive.fontSize(context, 14)
+                            )
+                        ),
+                        Text(
+                            _replyingTo!.text,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 14))
+                        ),
                       ],
                     ),
                   ),
@@ -349,9 +387,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                       autofocus: isDesktop,
                       onChanged: _onTextChanged,
                       style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16)),
-                      decoration: InputDecoration(
+                      // Optimization: Multi-line input support
+                      keyboardType: TextInputType.multiline,
+                      minLines: 1,
+                      maxLines: 5,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: const InputDecoration(
                         hintText: "Type a message...",
-                        hintStyle: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 14)),
                         border: InputBorder.none,
                         contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                       ),
@@ -394,15 +436,24 @@ class _PrivateChatTitle extends ConsumerWidget {
         CircleAvatar(
           backgroundColor: const Color(0xFF1A60FF),
           radius: 18,
-          child: Text(chat.name.isNotEmpty ? chat.name[0] : '?', style: TextStyle(color: Colors.white, fontSize: Responsive.fontSize(context, 18))),
+          child: Text(
+              chat.name.isNotEmpty ? chat.name[0] : '?',
+              style: TextStyle(color: Colors.white, fontSize: Responsive.fontSize(context, 18))
+          ),
         ),
         const SizedBox(width: 10),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(chat.name, style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: Responsive.fontSize(context, 16))),
+            Text(
+                chat.name,
+                style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: Responsive.fontSize(context, 16))
+            ),
             if (isTyping)
-              Text("typing...", style: TextStyle(color: const Color(0xFF1A60FF), fontSize: Responsive.fontSize(context, 12), fontWeight: FontWeight.bold)),
+              Text(
+                  "typing...",
+                  style: TextStyle(color: const Color(0xFF1A60FF), fontSize: Responsive.fontSize(context, 12), fontWeight: FontWeight.bold)
+              ),
           ],
         ),
       ],
@@ -467,7 +518,7 @@ class _PrivateMessageBubble extends StatelessWidget {
     final isMe = message.isMe;
     final bubbleColor = isMe
         ? (message.status == MessageStatus.failed ? Colors.red.shade700 : const Color(0xFF1A60FF))
-        : (isDark ? const Color(0xFF2C2C2C) : Colors.white);
+        : (isDark ? const Color(0xFF2C2C2C) : Colors.grey[200]);
     final textColor = isMe ? Colors.white : (isDark ? Colors.white : Colors.black87);
     final timeColor = isMe ? Colors.white70 : Colors.grey;
 
@@ -475,7 +526,6 @@ class _PrivateMessageBubble extends StatelessWidget {
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (isMe && message.status == MessageStatus.failed)
             IconButton(
@@ -513,8 +563,15 @@ class _PrivateMessageBubble extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(message.replyToSender ?? "Unknown", style: TextStyle(color: isMe ? Colors.white70 : const Color(0xFF1A60FF), fontWeight: FontWeight.bold, fontSize: Responsive.fontSize(context, 11))),
-                        Text(message.replyToContent ?? "...", style: TextStyle(color: isMe ? Colors.white60 : Colors.black54, fontSize: Responsive.fontSize(context, 11), overflow: TextOverflow.ellipsis), maxLines: 1),
+                        Text(
+                            message.replyToSender ?? "Unknown",
+                            style: TextStyle(color: isMe ? Colors.white70 : const Color(0xFF1A60FF), fontWeight: FontWeight.bold, fontSize: Responsive.fontSize(context, 11))
+                        ),
+                        Text(
+                            message.replyToContent ?? "...",
+                            style: TextStyle(color: isMe ? Colors.white60 : Colors.black54, fontSize: Responsive.fontSize(context, 11), overflow: TextOverflow.ellipsis),
+                            maxLines: 1
+                        ),
                       ],
                     ),
                   ),
