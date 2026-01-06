@@ -24,6 +24,7 @@ class _AvailableGroupTileState extends ConsumerState<AvailableGroupTile> {
     final colors = [
       Colors.orange, Colors.purple, Colors.pink, Colors.teal,
       Colors.blue, Colors.green, Colors.redAccent, Colors.indigo,
+      Colors.brown, Colors.deepOrange,
     ];
     return colors[name.hashCode.abs() % colors.length];
   }
@@ -52,13 +53,15 @@ class _AvailableGroupTileState extends ConsumerState<AvailableGroupTile> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final textColor = Theme.of(context).colorScheme.onSurface;
+    final secondaryTextColor = isDark ? Colors.grey[400] : Colors.grey[600];
     final bool isDesktop = Responsive.isDesktop(context);
 
-    // Sizing
+    // Sizing - Matching MessageTile
     final double avatarRadius = isDesktop ? 24 : 28.r;
     final double titleSize = Responsive.fontSize(context, 16);
+    final double subtitleSize = Responsive.fontSize(context, 14);
 
-    // Margins/Padding
+    // Margins/Padding - Matching MessageTile
     final hMargin = isDesktop ? 8.0 : 8.w;
     final vMargin = isDesktop ? 2.0 : 2.h;
     final vPadding = isDesktop ? 12.0 : 12.h;
@@ -68,9 +71,10 @@ class _AvailableGroupTileState extends ConsumerState<AvailableGroupTile> {
     return Container(
       margin: EdgeInsets.symmetric(horizontal: hMargin, vertical: vMargin),
       decoration: BoxDecoration(
-        color: isDark ? Colors.grey[900] : Colors.grey[100],
+        // Transparent/Hover effect style instead of card style
+        color: isDark ? Colors.transparent : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: isDark ? Colors.grey[800]! : Colors.grey[300]!),
+        // Optional: Add hover effect logic here if needed, or keep transparent
       ),
       child: Padding(
         padding: EdgeInsets.symmetric(vertical: vPadding, horizontal: hPadding),
@@ -96,29 +100,36 @@ class _AvailableGroupTileState extends ConsumerState<AvailableGroupTile> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  SizedBox(height: 4.h),
                   Text(
                     "Join to start chatting",
                     style: TextStyle(
-                      fontSize: Responsive.fontSize(context, 12),
-                      color: Colors.grey,
+                      fontSize: subtitleSize,
+                      color: secondaryTextColor,
+                      fontWeight: FontWeight.normal,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
             SizedBox(width: 8.w),
-            ElevatedButton(
-              onPressed: _isJoining ? null : _handleJoin,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1A60FF),
-                foregroundColor: Colors.white,
-                elevation: 0,
-                padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            SizedBox(
+              height: 32.h,
+              child: ElevatedButton(
+                onPressed: _isJoining ? null : _handleJoin,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1A60FF),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: EdgeInsets.symmetric(horizontal: 16.w),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                ),
+                child: _isJoining
+                    ? SizedBox(width: 14.w, height: 14.w, child: const CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : Text("Join", style: TextStyle(fontSize: Responsive.fontSize(context, 12), fontWeight: FontWeight.bold)),
               ),
-              child: _isJoining
-                  ? SizedBox(width: 16.w, height: 16.w, child: const CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : Text("Join", style: TextStyle(fontSize: Responsive.fontSize(context, 14), fontWeight: FontWeight.bold)),
             ),
           ],
         ),

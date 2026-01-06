@@ -320,8 +320,20 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(_replyingTo!.senderName, style: TextStyle(color: const Color(0xFF1A60FF), fontWeight: FontWeight.bold, fontSize: Responsive.fontSize(context, 14))),
-                        Text(_replyingTo!.text, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 14))),
+                        Text(
+                            _replyingTo!.senderName,
+                            style: TextStyle(
+                                color: const Color(0xFF1A60FF),
+                                fontWeight: FontWeight.bold,
+                                fontSize: Responsive.fontSize(context, 14)
+                            )
+                        ),
+                        Text(
+                            _replyingTo!.text,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 14))
+                        ),
                       ],
                     ),
                   ),
@@ -352,7 +364,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                       style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16)),
                       decoration: InputDecoration(
                         hintText: "Message ${currentChat.name}...",
-                        hintStyle: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 14)),
+                        hintStyle: const TextStyle(color: Colors.grey),
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                       ),
@@ -409,7 +421,11 @@ class _DateHeader extends StatelessWidget {
         ),
         child: Text(
           text,
-          style: TextStyle(fontSize: Responsive.fontSize(context, 12), fontWeight: FontWeight.w500, color: isDark ? Colors.grey[300] : Colors.grey[600]),
+          style: TextStyle(
+              fontSize: Responsive.fontSize(context, 12),
+              fontWeight: FontWeight.w500,
+              color: isDark ? Colors.grey[300] : Colors.grey[600]
+          ),
         ),
       ),
     );
@@ -573,7 +589,7 @@ class _GroupMessageBubble extends StatelessWidget {
                                 (message.status == MessageStatus.read
                                     ? Icons.done_all
                                     : (message.status == MessageStatus.failed ? Icons.error : Icons.done)),
-                                size: Responsive.fontSize(context, 12),
+                                size: 12,
                                 color: message.status == MessageStatus.read ? Colors.lightBlueAccent : timeColor,
                               ),
                             ]
@@ -615,7 +631,7 @@ class _GroupInfoContent extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text("Group Members", style: TextStyle(fontSize: Responsive.fontSize(context, 18), fontWeight: FontWeight.bold)),
-              // Removed Add Member button
+              // Add Member button removed
             ],
           ),
           const Divider(),

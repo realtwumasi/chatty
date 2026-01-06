@@ -126,6 +126,13 @@ class ApiService {
     return _requestWithRetry(() => http.post(uri, headers: _headers, body: jsonEncode(body)));
   }
 
+  // Added DELETE method
+  Future<dynamic> delete(String endpoint) async {
+    if (_accessToken == null) await loadTokens();
+    final uri = Uri.parse('$baseUrl$endpoint');
+    return _requestWithRetry(() => http.delete(uri, headers: _headers));
+  }
+
   Map<String, String> get _headers {
     final headers = {
       'Content-Type': 'application/json',

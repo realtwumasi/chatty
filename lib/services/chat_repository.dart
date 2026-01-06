@@ -148,7 +148,6 @@ class ChatRepository {
     _activeChatId = null;
   }
 
-  // Fixed: Use message_id logic compatible with updated WebSocketService
   void _sendReadReceipt(Chat chat) {
     if (chat.messages.isEmpty) return;
 
@@ -429,19 +428,27 @@ class ChatRepository {
   }
 
   void _handleUserLeft(Map<String, dynamic> payload) {
-    _updateGroupMembership(payload, "left the group", false);
+    final userId = payload['user_id']?.toString();
+    final currentUser = _ref.read(userProvider);
+
+    if (userId == currentUser?.id) {
+      _updateGroupMembership(payload, "left the group", false);
+      final groupId = payload['group_id']?.toString();
+      if (groupId != null) _ws.unsubscribeFromGroup(groupId);
+    } else {
+      _updateGroupMembership(payload, "left the group", false);
+    }
   }
 
   void _handleUserRemoved(Map<String, dynamic> payload) {
     _updateGroupMembership(payload, "has been removed from the group", false);
   }
 
-  // Fixed: Added safe username handling
   void _updateGroupMembership(Map<String, dynamic> payload, String actionText, bool isJoin) {
     final groupId = payload['group_id']?.toString();
     final userId = payload['user_id']?.toString();
-    // Safety check for null username
     final String username = payload['username']?.toString() ?? 'User';
+    final currentUser = _ref.read(userProvider);
 
     if (groupId == null || userId == null) return;
 
@@ -461,6 +468,11 @@ class ChatRepository {
         newParticipants.removeWhere((u) => u.id == userId);
       }
 
+      bool isMember = currentChat.isMember;
+      if (userId == currentUser?.id) {
+        isMember = isJoin;
+      }
+
       final updatedChat = Chat(
         id: currentChat.id,
         name: currentChat.name,
@@ -469,7 +481,7 @@ class ChatRepository {
         messages: [...currentChat.messages, sysMsg],
         unreadCount: _activeChatId == currentChat.id ? 0 : currentChat.unreadCount + 1,
         eventLog: currentChat.eventLog,
-        isMember: currentChat.isMember,
+        isMember: isMember,
       );
 
       final newChatList = List<Chat>.from(chats);
@@ -626,7 +638,7 @@ class ChatRepository {
           isMember: group.isMember,
         );
 
-        if (_ws.isConnected.value) _ws.subscribeToGroup(group.id);
+        if (_ws.isConnected.value && group.isMember) _ws.subscribeToGroup(group.id);
       }
 
       for (var local in currentChats) {
@@ -648,6 +660,8 @@ class ChatRepository {
       if (kDebugMode) print("Fetch chats error: $e");
     }
   }
+
+  // --- RESTORED MISSING METHODS ---
 
   Future<Map<String, List<Message>>> _fetchRecentGroupMessages() async {
     try {
@@ -736,6 +750,8 @@ class ChatRepository {
       return [];
     }
   }
+
+  // ---
 
   Future<void> fetchMessagesForChat(String chatId, bool isGroup) async {
     try {
@@ -843,6 +859,7 @@ class ChatRepository {
     }
   }
 
+  // Fixed: Added missing helper method
   Message _createSystemMessage(String text) {
     return Message(
         id: 'sys_${DateTime.now().millisecondsSinceEpoch}_${text.hashCode}',
@@ -1013,13 +1030,49 @@ class ChatRepository {
     }
   }
 
-  void leaveGroup(String chatId) {
+  // Fixed: Change return type to Future<void> to allow awaiting in UI
+  Future<void> leaveGroup(String chatId) async {
     final chats = _ref.read(chatListProvider);
-    final newChats = chats.where((c) => c.id != chatId).toList();
-    _ref.read(chatListProvider.notifier).state = newChats;
-    saveChatsToLocal();
-    _ws.unsubscribeFromGroup(chatId);
-    _api.post('/groups/$chatId/leave/', {});
+
+    try {
+      final index = chats.indexWhere((c) => c.id == chatId);
+      if (index != -1) {
+        final chat = chats[index];
+        final updatedChat = Chat(
+          id: chat.id,
+          name: chat.name,
+          isGroup: true,
+          isMember: false, // Mark as not member
+          messages: chat.messages,
+          participants: chat.participants,
+          unreadCount: chat.unreadCount,
+        );
+        final newChats = List<Chat>.from(chats);
+        newChats[index] = updatedChat;
+        _ref.read(chatListProvider.notifier).state = newChats;
+        saveChatsToLocal();
+        _ws.unsubscribeFromGroup(chatId);
+      }
+      await _api.post('/groups/$chatId/leave/', {});
+    } catch (e) {
+      if (kDebugMode) print("Error leaving group: $e");
+      await fetchChats(); // Revert state
+      rethrow;
+    }
+  }
+
+  Future<void> deleteGroup(String chatId) async {
+    try {
+      await _api.delete('/groups/$chatId/');
+      final chats = _ref.read(chatListProvider);
+      final newChats = chats.where((c) => c.id != chatId).toList();
+      _ref.read(chatListProvider.notifier).state = newChats;
+      saveChatsToLocal();
+      _ws.unsubscribeFromGroup(chatId);
+    } catch (e) {
+      await fetchChats();
+      rethrow;
+    }
   }
 
   Future<void> addMemberToGroup(String groupId, String userId) async {
@@ -1033,7 +1086,8 @@ class ChatRepository {
 
   Future<void> removeMemberFromGroup(String groupId, String userId) async {
     try {
-      await _api.post('/groups/$groupId/remove_member/', {'user_id': userId});
+      // Trying standard delete
+      await _api.delete('/groups/$groupId/members/$userId/');
       await fetchGroupMembers(groupId);
     } catch (e) {
       rethrow;
