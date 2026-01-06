@@ -197,6 +197,8 @@ class _HomePageState extends ConsumerState<HomePage> {
           ),
           Expanded(
             child: RefreshIndicator(
+              color: const Color(0xFF1A60FF),
+              backgroundColor: isDark ? const Color(0xFF2C2C2C) : Colors.white,
               onRefresh: _handleRefresh,
               child: ChatListView(
                 chats: chats,
