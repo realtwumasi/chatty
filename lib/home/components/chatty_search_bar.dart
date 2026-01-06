@@ -31,16 +31,26 @@ class ChattySearchBar extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: hPadding, vertical: vPadding),
       child: Container(
-        decoration: BoxDecoration(color: inputColor, borderRadius: BorderRadius.circular(12)),
+        decoration: BoxDecoration(
+          color: inputColor,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+             BoxShadow(
+               color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),
+               blurRadius: 10,
+               offset: const Offset(0, 4),
+             )
+          ],
+        ),
         child: TextField(
           controller: controller,
           focusNode: focusNode,
           onChanged: onChanged,
           style: TextStyle(fontSize: Responsive.fontSize(context, 14)),
           decoration: InputDecoration(
-              hintText: "Search (Ctrl+F)...",
-              hintStyle: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 14)),
-              prefixIcon: const Icon(Icons.search, color: Colors.grey),
+              hintText: "Search conversations...",
+              hintStyle: TextStyle(color: const Color(0xFF9E9E9E), fontSize: Responsive.fontSize(context, 14)),
+              prefixIcon: const Icon(Icons.search, color: Color(0xFF9E9E9E)),
               border: InputBorder.none,
               contentPadding: EdgeInsets.symmetric(vertical: isDesktop ? 12 : 12.h),
               suffixIcon: controller.text.isNotEmpty

@@ -91,20 +91,23 @@ class MessageTile extends ConsumerWidget {
           padding: EdgeInsets.symmetric(vertical: vPadding, horizontal: hPadding),
           child: Row(
             children: [
-              CircleAvatar(
-                backgroundColor: chat.isGroup
-                    ? (isDark ? Colors.grey[800] : Colors.grey[300])
-                    : _getAvatarColor(chat.name),
-                radius: avatarRadius,
-                child: chat.isGroup
-                    ? Icon(Icons.group, color: isDark ? Colors.white70 : Colors.grey[700], size: avatarRadius * 1.2)
-                    : Text(
-                  chat.name.isNotEmpty ? chat.name[0].toUpperCase() : "?",
-                  style: TextStyle(
-                    fontSize: Responsive.fontSize(context, 20),
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+              Hero(
+                tag: 'avatar_${chat.id}',
+                child: CircleAvatar(
+                  backgroundColor: chat.isGroup
+                      ? (isDark ? Colors.grey[800] : Colors.grey[300])
+                      : _getAvatarColor(chat.name),
+                  radius: avatarRadius,
+                  child: chat.isGroup
+                      ? Icon(Icons.group, color: isDark ? Colors.white70 : Colors.grey[700], size: avatarRadius * 1.2)
+                      : Text(
+                          chat.name.isNotEmpty ? chat.name[0].toUpperCase() : "?",
+                          style: TextStyle(
+                            fontSize: Responsive.fontSize(context, 20),
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
                 ),
               ),
               SizedBox(width: contentGap),
@@ -148,59 +151,59 @@ class MessageTile extends ConsumerWidget {
                         Expanded(
                           child: isTyping
                               ? Text(
-                            "Typing...",
-                            style: TextStyle(
-                              fontSize: subtitleSize,
-                              color: const Color(0xFF1A60FF),
-                              fontWeight: FontWeight.bold,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          )
-                              : Row(
-                            children: [
-                              if (isMyLastMsg && lastMsg != null)
-                                Padding(
-                                  padding: EdgeInsets.only(right: isDesktop ? 4 : 4.w),
-                                  child: Icon(
-                                    lastMsg.status == MessageStatus.sending ? Icons.access_time :
-                                    (lastMsg.status == MessageStatus.read
-                                        ? Icons.done_all
-                                        : (lastMsg.status == MessageStatus.failed ? Icons.error_outline : Icons.done)),
-                                    size: Responsive.fontSize(context, 14),
-                                    color: lastMsg.status == MessageStatus.read
-                                        ? Colors.lightBlueAccent
-                                        : (lastMsg.status == MessageStatus.failed ? Colors.red : secondaryTextColor),
-                                  ),
-                                ),
-                              Expanded(
-                                child: Text(
-                                  lastMessage,
+                                  "Typing...",
                                   style: TextStyle(
                                     fontSize: subtitleSize,
-                                    color: chat.unreadCount > 0
-                                        ? textColor
-                                        : secondaryTextColor,
-                                    fontWeight: chat.unreadCount > 0
-                                        ? FontWeight.w500
-                                        : FontWeight.normal,
+                                    color: const Color(0xFF1A60FF),
+                                    fontWeight: FontWeight.bold,
+                                    fontStyle: FontStyle.italic,
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
+                                )
+                              : Row(
+                                  children: [
+                                    if (isMyLastMsg && lastMsg != null)
+                                      Padding(
+                                        padding: EdgeInsets.only(right: isDesktop ? 4 : 4.w),
+                                        child: Icon(
+                                          lastMsg.status == MessageStatus.sending ? Icons.access_time :
+                                          (lastMsg.status == MessageStatus.read
+                                              ? Icons.done_all
+                                              : (lastMsg.status == MessageStatus.failed ? Icons.error_outline : Icons.done)),
+                                          size: Responsive.fontSize(context, 14),
+                                          color: lastMsg.status == MessageStatus.read
+                                              ? Colors.lightBlueAccent
+                                              : (lastMsg.status == MessageStatus.failed ? Colors.red : secondaryTextColor),
+                                        ),
+                                      ),
+                                    Expanded(
+                                      child: Text(
+                                        lastMessage,
+                                        style: TextStyle(
+                                          fontSize: subtitleSize,
+                                          color: chat.unreadCount > 0
+                                              ? textColor
+                                              : secondaryTextColor,
+                                          fontWeight: chat.unreadCount > 0
+                                              ? FontWeight.w500
+                                              : FontWeight.normal,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                            ],
-                          ),
                         ),
                         if (chat.unreadCount > 0)
                           Container(
                             margin: EdgeInsets.only(left: isDesktop ? 8 : 8.w),
-                            padding: const EdgeInsets.all(6),
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF1A60FF),
-                              shape: BoxShape.circle,
+                            padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1A60FF),
+                              borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
-                              chat.unreadCount.toString(),
+                              chat.unreadCount > 99 ? '99+' : chat.unreadCount.toString(),
                               style: TextStyle(
                                 fontSize: Responsive.fontSize(context, 10),
                                 color: Colors.white,

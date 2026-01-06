@@ -58,15 +58,15 @@ class ChattyDrawer extends ConsumerWidget {
   void _handleLogout(BuildContext context, WidgetRef ref) {
      showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         title: Text("Logout", style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: Responsive.fontSize(context, 18))),
         content: Text("Are you sure you want to log out?", style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: Responsive.fontSize(context, 14))),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text("Cancel", style: TextStyle(fontSize: Responsive.fontSize(context, 14)))),
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text("Cancel", style: TextStyle(fontSize: Responsive.fontSize(context, 14)))),
           TextButton(
             onPressed: () async {
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
               await ref.read(chatRepositoryProvider).logout();
               if (context.mounted) {
                 Navigator.pushAndRemoveUntil(
