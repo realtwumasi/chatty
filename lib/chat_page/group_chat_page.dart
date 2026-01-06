@@ -81,6 +81,11 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
       });
       _messageController.clear();
       setState(() => _replyingTo = null);
+      if (widget.isDesktop) {
+        Future.delayed(const Duration(milliseconds: 100), () {
+           if (mounted) _inputFocusNode.requestFocus();
+        });
+      }
     }
   }
 
@@ -344,6 +349,34 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                           if (showDate) ChatDateHeader(date: message.timestamp, isDark: isDark),
                           GestureDetector(
                             onLongPress: () => _onSwipeReply(message),
+                            onSecondaryTapUp: (details) {
+                              // Desktop Right-Click Menu
+                              final position = RelativeRect.fromRect(
+                                details.globalPosition & Size.zero, 
+                                Offset.zero & MediaQuery.of(context).size
+                              );
+                              showMenu(
+                                context: context,
+                                position: position,
+                                items: [
+                                  PopupMenuItem(
+                                    value: 'reply',
+                                    child: Row(children: [const Icon(Icons.reply, size: 20), const SizedBox(width: 8), const Text("Reply")]),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'copy',
+                                    child: Row(children: [const Icon(Icons.copy, size: 20), const SizedBox(width: 8), const Text("Copy Text")]),
+                                  ),
+                                ],
+                              ).then((value) {
+                                if (value == 'reply') {
+                                  _onSwipeReply(message);
+                                } else if (value == 'copy') {
+                                  Clipboard.setData(ClipboardData(text: message.text));
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Copied to clipboard"), duration: Duration(seconds: 1)));
+                                }
+                              });
+                            },
                             child: Dismissible(
                               key: ValueKey(message.id),
                               direction: DismissDirection.startToEnd,
@@ -353,8 +386,8 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                               },
                               background: Container(
                                 alignment: Alignment.centerLeft,
-                                padding: EdgeInsets.only(left: 20),
-                                child: Icon(Icons.reply, color: const Color(0xFF1A60FF)),
+                                padding: const EdgeInsets.only(left: 20),
+                                child: const Icon(Icons.reply, color: Color(0xFF1A60FF)),
                               ),
                               child: _GroupMessageBubble(
                                 message: message,

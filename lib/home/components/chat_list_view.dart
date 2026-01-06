@@ -137,6 +137,8 @@ class ChatListView extends ConsumerWidget {
         ),
       ),
     );
+  }
+
   void _selectNextChat(List<dynamic> items) {
     if (items.isEmpty) return;
     final chatItems = items.whereType<Chat>().toList();

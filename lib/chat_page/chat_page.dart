@@ -80,6 +80,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       });
       _messageController.clear();
       setState(() => _replyingTo = null);
+      if (widget.isDesktop) {
+        Future.delayed(const Duration(milliseconds: 100), () {
+           if (mounted) _inputFocusNode.requestFocus();
+        });
+      }
     }
   }
 
@@ -365,6 +370,35 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                           if (showDate) ChatDateHeader(date: msg.timestamp, isDark: isDark),
                           GestureDetector(
                             onLongPress: () => _onSwipeReply(msg),
+                            onSecondaryTapUp: (details) {
+                              // Desktop Right-Click Menu
+                              final position = RelativeRect.fromRect(
+                                details.globalPosition & Size.zero, 
+                                Offset.zero & MediaQuery.of(context).size
+                              );
+                              showMenu(
+                                context: context,
+                                position: position,
+                                items: [
+                                  PopupMenuItem(
+                                    value: 'reply',
+                                    child: Row(children: [const Icon(Icons.reply, size: 20), const SizedBox(width: 8), const Text("Reply")]),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'copy',
+                                    child: Row(children: [const Icon(Icons.copy, size: 20), const SizedBox(width: 8), const Text("Copy Text")]),
+                                  ),
+                                  // Can add Delete here later
+                                ],
+                              ).then((value) {
+                                if (value == 'reply') {
+                                  _onSwipeReply(msg);
+                                } else if (value == 'copy') {
+                                  Clipboard.setData(ClipboardData(text: msg.text));
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Copied to clipboard"), duration: Duration(seconds: 1)));
+                                }
+                              });
+                            },
                             child: Dismissible(
                               key: ValueKey(msg.id),
                               direction: DismissDirection.startToEnd,
@@ -374,8 +408,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                               },
                               background: Container(
                                 alignment: Alignment.centerLeft,
-                                padding: EdgeInsets.only(left: 20),
-                                child: Icon(Icons.reply, color: const Color(0xFF1A60FF)),
+                                padding: const EdgeInsets.only(left: 20),
+                                child: const Icon(Icons.reply, color: Color(0xFF1A60FF)),
                               ),
                               child: _PrivateMessageBubble(
                                 message: msg,

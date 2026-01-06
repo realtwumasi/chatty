@@ -85,6 +85,7 @@ class MessageTile extends ConsumerWidget {
       ),
       child: InkWell(
         onTap: onTap,
+        hoverColor: isDark ? Colors.white.withOpacity(0.05) : const Color(0xFF1A60FF).withOpacity(0.05),
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: EdgeInsets.symmetric(vertical: vPadding, horizontal: hPadding),
@@ -201,7 +202,7 @@ class MessageTile extends ConsumerWidget {
                             child: Text(
                               chat.unreadCount.toString(),
                               style: TextStyle(
-                                fontSize: 10.sp, // keep .sp for text even on desktop to respect scaling slightly
+                                fontSize: Responsive.fontSize(context, 10),
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
                               ),
