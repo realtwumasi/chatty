@@ -11,8 +11,6 @@ import 'api_service.dart';
 // --- Providers ---
 
 final chatRepositoryProvider = Provider((ref) => ChatRepository(ref));
-// Add global access to WS service for debugging
-final webSocketServiceProvider = Provider((ref) => ref.read(chatRepositoryProvider).wsService);
 
 final userProvider = StateProvider<User?>((ref) => null);
 final chatListProvider = StateProvider<List<Chat>>((ref) => []);
@@ -29,10 +27,10 @@ class ChatRepository {
   final Ref _ref;
   final ApiService _api = ApiService();
   final WebSocketService _ws = WebSocketService();
-  WebSocketService get wsService => _ws;
 
   final Map<String, Timer> _typingTimers = {};
   String? _activeChatId;
+  DateTime? _lastAutoFetch;
 
   // Timer for debouncing local storage writes
   Timer? _saveDebounce;
@@ -43,9 +41,16 @@ class ChatRepository {
       _ref.read(wsConnectionProvider.notifier).state = connected;
       if (kDebugMode) print("WS Status Changed: $connected");
 
-      // Auto-sync data when connection is restored
+      // Auto-sync data when connection is restored, but throttle it
       if (connected) {
-        fetchChats();
+        final now = DateTime.now();
+        if (_lastAutoFetch == null || now.difference(_lastAutoFetch!) > const Duration(minutes: 1)) {
+          if (kDebugMode) print("Repo: Auto-fetching chats (Throttled)...");
+          _lastAutoFetch = now;
+          fetchChats();
+        } else {
+          if (kDebugMode) print("Repo: Skipping auto-fetch (Cooldown active)");
+        }
       }
     });
 

@@ -50,8 +50,8 @@ class MessageTile extends ConsumerWidget {
     final bool isDesktop = Responsive.isDesktop(context);
 
     // Watch typing status for this specific chat
-    final typingMap = ref.watch(typingStatusProvider);
-    final typingUsers = typingMap[chat.id] ?? {};
+    // Watch typing status EFFICIENTLY using select
+    final typingUsers = ref.watch(typingStatusProvider.select((map) => map[chat.id] ?? {}));
     final isTyping = typingUsers.isNotEmpty;
 
     final tileColor = isSelected

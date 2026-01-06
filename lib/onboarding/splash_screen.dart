@@ -20,14 +20,19 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _checkAuth();
+    _startLoading();
   }
 
-  void _checkAuth() async {
-    await Future.delayed(const Duration(seconds: 2));
+  void _startLoading() async {
+    // Start initialization immediately so theme loads ASAP
+    final initTask = ref.read(chatRepositoryProvider).initialize();
+    
+    // Ensure we show splash for at least 2 seconds
+    final minDelay = Future.delayed(const Duration(seconds: 2));
 
-    // Use Riverpod provider
-    final isLoggedIn = await ref.read(chatRepositoryProvider).initialize();
+    // Wait for both
+    final results = await Future.wait([initTask, minDelay]);
+    final isLoggedIn = results[0] as bool;
 
     if (!mounted) return;
 
@@ -73,6 +78,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
             ),
             SizedBox(height: 15.h),
             AnimatedTextKit(
+              key: ValueKey(Theme.of(context).brightness),
               animatedTexts: [
                 TypewriterAnimatedText(
                   'Chatty',

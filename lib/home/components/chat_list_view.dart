@@ -98,29 +98,33 @@ class ChatListView extends ConsumerWidget {
             final item = listItems[index];
 
             if (item == "available_groups_header") {
-              return Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
-                child: Row(
-                  children: [
-                    Expanded(child: Divider(color: Colors.grey[400])),
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 8.w),
-                      child: Text("Available groups to join", style: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 12), fontWeight: FontWeight.bold)),
-                    ),
-                    Expanded(child: Divider(color: Colors.grey[400])),
-                  ],
+              return RepaintBoundary(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+                  child: Row(
+                    children: [
+                      Expanded(child: Divider(color: Colors.grey[400])),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8.w),
+                        child: Text("Available groups to join", style: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 12), fontWeight: FontWeight.bold)),
+                      ),
+                      Expanded(child: Divider(color: Colors.grey[400])),
+                    ],
+                  ),
                 ),
               );
             }
 
             if (item is Chat) {
               if (item.isGroup && !item.isMember) {
-                return AvailableGroupTile(chat: item);
+                return RepaintBoundary(child: AvailableGroupTile(chat: item));
               } else {
-                return MessageTile(
-                  chat: item,
-                  isSelected: selectedChat?.id == item.id,
-                  onTap: () => onChatSelected(item),
+                return RepaintBoundary(
+                  child: MessageTile(
+                    chat: item,
+                    isSelected: selectedChat?.id == item.id,
+                    onTap: () => onChatSelected(item),
+                  ),
                 );
               }
             }

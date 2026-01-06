@@ -42,21 +42,6 @@ class ChattyDrawer extends ConsumerWidget {
                 onChanged: (val) => repo.toggleTheme()
             ),
           ),
-          // Debug Info
-          Consumer(builder: (context, ref, _) {
-            final ws = ref.watch(webSocketServiceProvider);
-            return ValueListenableBuilder<String?>(
-              valueListenable: ws.lastError,
-              builder: (context, error, _) {
-                if (error == null) return const SizedBox.shrink();
-                return ListTile(
-                  title: Text("Connection Error", style: TextStyle(color: Colors.red, fontSize: Responsive.fontSize(context, 12), fontWeight: FontWeight.bold)),
-                  subtitle: Text(error, style: TextStyle(color: Colors.red, fontSize: Responsive.fontSize(context, 10))),
-                  leading: const Icon(Icons.error_outline, color: Colors.red),
-                );
-              },
-            );
-          }),
           const Spacer(),
           Divider(color: isDark ? Colors.grey[800] : Colors.grey[300]),
           ListTile(

@@ -73,10 +73,19 @@ class ApiService {
     }
   }
 
+  // Circuit Breaker State
+  DateTime? _throttleUntil;
+
   // --- Auth & Refresh Logic ---
 
   Future<bool> refreshToken() async {
     if (_refreshToken == null) return false;
+    
+    // Respect Circuit Breaker
+    if (_throttleUntil != null && DateTime.now().isBefore(_throttleUntil!)) {
+      if (kDebugMode) print("API: Circuit Breaker Active. Skipping refresh.");
+      return false;
+    }
 
     try {
       if (kDebugMode) print("API: Refreshing token...");
@@ -91,6 +100,11 @@ class ApiService {
         },
         body: jsonEncode({'refresh': _refreshToken}),
       );
+
+      if (response.statusCode == 429) {
+         _handleTrottle(response);
+         return false;
+      }
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -162,6 +176,17 @@ class ApiService {
   Future<dynamic> _requestWithRetry(Future<http.Response> Function() requestFn, {int maxRetries = 3}) async {
     int attempts = 0;
     while (attempts < maxRetries) {
+      // Respect Circuit Breaker
+      if (_throttleUntil != null) {
+        if (DateTime.now().isBefore(_throttleUntil!)) {
+          final waitSeconds = _throttleUntil!.difference(DateTime.now()).inSeconds;
+          if (kDebugMode) print("API: Circuit Breaker Active. Waiting ${waitSeconds}s...");
+          throw ApiException("Requests throttled. Please wait ${waitSeconds}s.", statusCode: 429);
+        } else {
+          _throttleUntil = null; // Reset if expired
+        }
+      }
+
       try {
         final response = await requestFn();
 
@@ -205,14 +230,48 @@ class ApiService {
     }
   }
 
+  void _handleTrottle(http.Response response) {
+    int waitSeconds = 60; // Default
+    final retryAfter = response.headers['retry-after'];
+    if (retryAfter != null) {
+      waitSeconds = int.tryParse(retryAfter) ?? 60;
+    } else {
+       // Try to parse from body
+       try {
+         final body = jsonDecode(response.body);
+         // Example: "Expected available in 1691 seconds."
+         if (body is Map && body['detail'] != null) {
+           final detail = body['detail'].toString();
+           final check = RegExp(r'in (\d+) seconds').firstMatch(detail);
+           if (check != null) {
+             waitSeconds = int.parse(check.group(1)!);
+           }
+         }
+       } catch (_) {}
+    }
+
+    _throttleUntil = DateTime.now().add(Duration(seconds: waitSeconds + 1)); // +1 buffer
+    if (kDebugMode) print("API: 429 Throttled. Pausing all requests for ${waitSeconds}s.");
+  }
+
   dynamic _processResponse(http.Response response) {
+    if (response.statusCode == 429) {
+      _handleTrottle(response);
+      throw ApiException("Too many requests. Please wait.", statusCode: 429);
+    }
+
     if (kDebugMode) {
       print("API ${response.request?.method} ${response.request?.url} [${response.statusCode}]");
     }
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       if (response.body.isEmpty) return {};
-      return jsonDecode(response.body);
+      try {
+         return jsonDecode(response.body);
+      } catch (e) {
+         // Some endpoints might return non-JSON 200 OK
+         return {};
+      }
     } else {
       String msg = "Unknown Error";
       try {
