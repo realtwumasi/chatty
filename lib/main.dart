@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-
 import 'onboarding/splash_screen.dart';
 import 'services/chat_repository.dart';
 
@@ -34,6 +33,22 @@ class MyApp extends ConsumerWidget {
               backgroundColor: Colors.white,
               iconTheme: IconThemeData(color: Colors.black),
             ),
+            // Global Cursor & Selection Color
+            textSelectionTheme: const TextSelectionThemeData(
+              cursorColor: Color(0xFF1A60FF),
+              selectionColor: Color(0x4D1A60FF), // 30% opacity blue
+              selectionHandleColor: Color(0xFF1A60FF),
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFF1A60FF), width: 1.5),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+            ),
             colorScheme: const ColorScheme.light(
               primary: Colors.white,
               onPrimary: Color(0xFF1A60FF),
@@ -50,6 +65,22 @@ class MyApp extends ConsumerWidget {
             appBarTheme: const AppBarTheme(
               backgroundColor: Color(0xFF121212),
               iconTheme: IconThemeData(color: Colors.white),
+            ),
+            // Global Cursor & Selection Color (Dark Mode)
+            textSelectionTheme: const TextSelectionThemeData(
+              cursorColor: Color(0xFF1A60FF),
+              selectionColor: Color(0x4D1A60FF),
+              selectionHandleColor: Color(0xFF1A60FF),
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFF1A60FF), width: 1.5),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey.shade700),
+              ),
             ),
             colorScheme: const ColorScheme.dark(
               primary: Color(0xFF121212),
