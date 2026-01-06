@@ -10,6 +10,7 @@ import '../model/responsive_helper.dart';
 import '../services/chat_repository.dart';
 import 'components/chat_date_header.dart';
 import 'components/chat_input_area.dart';
+import 'components/message_bubble.dart';
 
 // Strictly for Private Chats
 class ChatPage extends ConsumerStatefulWidget {
@@ -411,11 +412,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                                 padding: const EdgeInsets.only(left: 20),
                                 child: const Icon(Icons.reply, color: Color(0xFF1A60FF)),
                               ),
-                              child: _PrivateMessageBubble(
+                              child: MessageBubble(
                                 message: msg,
                                 isDark: isDark,
                                 isFirstInSequence: isFirstInSequence,
                                 onRetry: () => ref.read(chatRepositoryProvider).resendMessage(_chatId, msg, false),
+                                showName: false,
                               ),
                             ),
                           ),
@@ -532,121 +534,7 @@ class _PrivateChatTitle extends ConsumerWidget {
 
 
 
-class _PrivateMessageBubble extends StatelessWidget {
-  final Message message;
-  final bool isDark;
-  final bool isFirstInSequence;
-  final VoidCallback onRetry;
 
-  const _PrivateMessageBubble({
-    required this.message,
-    required this.isDark,
-    required this.onRetry,
-    this.isFirstInSequence = true,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isMe = message.isMe;
-    final bubbleColor = isMe
-        ? (message.status == MessageStatus.failed ? Colors.red.shade700 : const Color(0xFF1A60FF))
-        : (isDark ? const Color(0xFF2C2C2C) : Colors.grey[200]);
-    final textColor = isMe ? Colors.white : (isDark ? Colors.white : Colors.black87);
-    final timeColor = isMe ? Colors.white70 : Colors.grey;
-
-    return Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (isMe && message.status == MessageStatus.failed)
-            IconButton(
-              icon: const Icon(Icons.refresh, color: Colors.red),
-              onPressed: onRetry,
-            ),
-          Container(
-            margin: EdgeInsets.only(top: 2.h, bottom: 2.h),
-            padding: const EdgeInsets.all(12),
-            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-            decoration: BoxDecoration(
-              color: bubbleColor,
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular((!isMe && !isFirstInSequence) ? 2.r : 16.r),
-                topRight: Radius.circular((isMe && !isFirstInSequence) ? 2.r : 16.r),
-                bottomLeft: isMe ? Radius.circular(16.r) : Radius.zero,
-                bottomRight: isMe ? Radius.zero : Radius.circular(16.r),
-              ),
-              boxShadow: [
-                if (!isDark && !isMe) BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 2, offset: const Offset(0, 1))
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (message.replyToId != null)
-                  Container(
-                    margin: EdgeInsets.only(bottom: 6),
-                    padding: EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                        color: isMe ? Colors.white.withOpacity(0.2) : Colors.black.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border(left: BorderSide(color: isMe ? Colors.white70 : const Color(0xFF1A60FF), width: 3))
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                            message.replyToSender ?? "Unknown",
-                            style: TextStyle(color: isMe ? Colors.white70 : const Color(0xFF1A60FF), fontWeight: FontWeight.bold, fontSize: Responsive.fontSize(context, 11))
-                        ),
-                        Text(
-                            message.replyToContent ?? "...",
-                            style: TextStyle(color: isMe ? Colors.white60 : Colors.black54, fontSize: Responsive.fontSize(context, 11), overflow: TextOverflow.ellipsis),
-                            maxLines: 1
-                        ),
-                      ],
-                    ),
-                  ),
-
-                Wrap(
-                  alignment: WrapAlignment.end,
-                  crossAxisAlignment: WrapCrossAlignment.end,
-                  spacing: 8,
-                  children: [
-                    Text(message.text, style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 15))),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4.0),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            "${message.timestamp.hour.toString().padLeft(2, '0')}:${message.timestamp.minute.toString().padLeft(2, '0')}",
-                            style: TextStyle(color: timeColor, fontSize: Responsive.fontSize(context, 10)),
-                          ),
-                          if (isMe) ...[
-                            const SizedBox(width: 4),
-                            Icon(
-                                message.status == MessageStatus.sending ? Icons.access_time :
-                                (message.status == MessageStatus.read
-                                    ? Icons.done_all
-                                    : (message.status == MessageStatus.failed ? Icons.error : Icons.done)),
-                                size: 12,
-                                color: message.status == MessageStatus.read ? Colors.lightBlueAccent : Colors.white70
-                            )
-                          ]
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _PrivateChatInfoContent extends ConsumerWidget {
   final Chat chat;

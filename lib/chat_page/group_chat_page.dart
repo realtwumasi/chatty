@@ -12,6 +12,7 @@ import '../services/chat_repository.dart';
 import 'chat_page.dart';
 import 'components/chat_date_header.dart';
 import 'components/chat_input_area.dart';
+import 'components/message_bubble.dart';
 
 class GroupChatPage extends ConsumerStatefulWidget {
   final Chat chat;
@@ -389,7 +390,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                                 padding: const EdgeInsets.only(left: 20),
                                 child: const Icon(Icons.reply, color: Color(0xFF1A60FF)),
                               ),
-                              child: _GroupMessageBubble(
+                              child: MessageBubble(
                                 message: message,
                                 isDark: isDark,
                                 onRetry: () => ref.read(chatRepositoryProvider).resendMessage(_chatId, message, true),
@@ -506,142 +507,7 @@ class _GroupChatTitle extends ConsumerWidget {
   }
 }
 
-class _GroupMessageBubble extends StatelessWidget {
-  final Message message;
-  final bool isDark;
-  final VoidCallback onRetry;
-  final bool showName;
 
-  const _GroupMessageBubble({
-    required this.message,
-    required this.isDark,
-    required this.onRetry,
-    this.showName = true,
-  });
-
-  Color _getUserColor(String username) {
-    final colors = [
-      Colors.orange, Colors.purple, Colors.pink, Colors.teal,
-      Colors.blue, Colors.green, Colors.redAccent, Colors.indigo
-    ];
-    return colors[username.hashCode.abs() % colors.length];
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isMe = message.isMe;
-    final bubbleColor = isMe
-        ? (message.status == MessageStatus.failed ? Colors.red.shade700 : const Color(0xFF1A60FF))
-        : (isDark ? const Color(0xFF2C2C2C) : Colors.white);
-    final textColor = isMe ? Colors.white : (isDark ? Colors.white : Colors.black87);
-    final timeColor = isMe ? Colors.white70 : Colors.grey;
-    final senderColor = _getUserColor(message.senderName);
-
-    return Align(
-      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (isMe && message.status == MessageStatus.failed)
-            IconButton(
-              icon: const Icon(Icons.refresh, color: Colors.red),
-              onPressed: onRetry,
-            ),
-          ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-            child: Container(
-              margin: EdgeInsets.symmetric(vertical: 4.h),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: bubbleColor,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(showName && !isMe ? 0 : 12.r),
-                  topRight: Radius.circular(12.r),
-                  bottomLeft: isMe ? Radius.circular(12.r) : Radius.zero,
-                  bottomRight: isMe ? Radius.zero : Radius.circular(12.r),
-                ),
-                boxShadow: [
-                  if (!isDark && !isMe) BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 2, offset: const Offset(0, 1))
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Reply Context
-                  if (message.replyToId != null)
-                    Container(
-                      margin: EdgeInsets.only(bottom: 6),
-                      padding: EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                          color: isMe ? Colors.white.withOpacity(0.2) : Colors.black.withOpacity(0.05),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border(left: BorderSide(color: isMe ? Colors.white70 : senderColor, width: 3))
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                              message.replyToSender ?? "Unknown",
-                              style: TextStyle(color: isMe ? Colors.white70 : senderColor, fontWeight: FontWeight.bold, fontSize: Responsive.fontSize(context, 11))
-                          ),
-                          Text(
-                              message.replyToContent ?? "...",
-                              style: TextStyle(color: isMe ? Colors.white60 : (isDark ? Colors.grey[300] : Colors.black54), fontSize: Responsive.fontSize(context, 11), overflow: TextOverflow.ellipsis), maxLines: 1
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  if (!isMe && showName)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4.0),
-                      child: Text(
-                        message.senderName,
-                        style: TextStyle(fontWeight: FontWeight.bold, color: senderColor, fontSize: Responsive.fontSize(context, 13)),
-                      ),
-                    ),
-                  Wrap(
-                    alignment: WrapAlignment.end,
-                    crossAxisAlignment: WrapCrossAlignment.end,
-                    spacing: 8,
-                    children: [
-                      Text(message.text, style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 15))),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4.0),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              "${message.timestamp.hour.toString().padLeft(2, '0')}:${message.timestamp.minute.toString().padLeft(2, '0')}",
-                              style: TextStyle(color: timeColor, fontSize: Responsive.fontSize(context, 10)),
-                            ),
-                            if (isMe) ...[
-                              const SizedBox(width: 4),
-                              Icon(
-                                message.status == MessageStatus.sending ? Icons.access_time :
-                                (message.status == MessageStatus.read
-                                    ? Icons.done_all
-                                    : (message.status == MessageStatus.failed ? Icons.error : Icons.done)),
-                                size: 12,
-                                color: message.status == MessageStatus.read ? Colors.lightBlueAccent : timeColor,
-                              ),
-                            ]
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _GroupInfoContent extends ConsumerWidget {
   final String chatId;

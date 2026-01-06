@@ -31,10 +31,16 @@ class ChatInputArea extends StatelessWidget {
 
 
     return Container(
-      padding: EdgeInsets.all(isDesktop ? 20 : 10),
+      padding: EdgeInsets.all(isDesktop ? 20 : 12),
       decoration: BoxDecoration(
         color: backgroundColor,
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 5)],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),
+            offset: const Offset(0, -2),
+            blurRadius: 10,
+          )
+        ],
       ),
       child: Row(
         children: [
@@ -42,7 +48,8 @@ class ChatInputArea extends StatelessWidget {
             child: Container(
               decoration: BoxDecoration(
                 color: inputColor,
-                borderRadius: BorderRadius.circular(25),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: isDark ? Colors.transparent : Colors.grey.shade200),
               ),
               child: CallbackShortcuts(
                 bindings: {
@@ -61,7 +68,7 @@ class ChatInputArea extends StatelessWidget {
                   style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16)),
                   decoration: InputDecoration(
                     hintText: hintText,
-                    hintStyle: const TextStyle(color: Colors.grey),
+                    hintStyle: TextStyle(color: Colors.grey[400]),
                     border: InputBorder.none,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   ),
@@ -70,9 +77,16 @@ class ChatInputArea extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          CircleAvatar(
-            backgroundColor: const Color(0xFF1A60FF),
+          const SizedBox(width: 12),
+          Container(
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [Color(0xFF1A60FF), Color(0xFF0040DD)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
             child: IconButton(
               icon: const Icon(Icons.send, color: Colors.white, size: 20),
               onPressed: onSubmitted,
