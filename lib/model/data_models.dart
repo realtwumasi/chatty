@@ -74,6 +74,17 @@ class Message {
 
     final replyData = json['reply_to'] as Map<String, dynamic>?;
 
+    // Parse Status: Check common API fields for read status
+    MessageStatus parsedStatus = MessageStatus.delivered; // Default for server-fetched messages
+
+    if (json['is_read'] == true) {
+      parsedStatus = MessageStatus.read;
+    } else if (json['read_at'] != null) {
+      parsedStatus = MessageStatus.read;
+    } else if (json['status'] == 'read') {
+      parsedStatus = MessageStatus.read;
+    }
+
     return Message(
       id: json['id']?.toString() ?? json['message_id']?.toString() ?? '',
       senderId: senderId,
@@ -81,7 +92,7 @@ class Message {
       text: json['content'] ?? '',
       timestamp: DateTime.tryParse(json['created_at'] ?? json['timestamp'] ?? '') ?? DateTime.now(),
       isMe: senderId == currentUserId,
-      status: MessageStatus.sent,
+      status: parsedStatus,
       isSystem: json['is_system'] ?? false,
       replyToId: replyData?['id']?.toString() ?? json['reply_to_id']?.toString(),
       replyToSender: replyData?['sender_username'] ?? json['reply_to_sender']?.toString(),
@@ -137,7 +148,7 @@ class Chat {
   final String id;
   final String name;
   final bool isGroup;
-  final bool isMember; // Added to track if user has joined
+  final bool isMember;
   final List<Message> messages;
   final List<User> participants;
   int unreadCount;
@@ -149,7 +160,7 @@ class Chat {
     required this.isGroup,
     required this.messages,
     required this.participants,
-    this.isMember = true, // Default to true for private chats
+    this.isMember = true,
     this.unreadCount = 0,
     this.eventLog = const [],
   });
@@ -159,7 +170,7 @@ class Chat {
       id: json['id']?.toString() ?? '',
       name: json['name'] ?? 'Group Chat',
       isGroup: true,
-      isMember: json['is_member'] ?? false, // From API
+      isMember: json['is_member'] ?? false,
       unreadCount: 0,
       messages: [],
       participants: [],
@@ -183,7 +194,7 @@ class Chat {
       id: json['id'],
       name: json['name'],
       isGroup: json['isGroup'],
-      isMember: json['isMember'] ?? true, // Default to true for backward compatibility
+      isMember: json['isMember'] ?? true,
       messages: (json['messages'] as List?)
           ?.map((m) => Message.fromLocalJson(m))
           .toList() ??

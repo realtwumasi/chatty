@@ -40,7 +40,6 @@ class ChatRepository {
       _ref.read(wsConnectionProvider.notifier).state = connected;
       if (kDebugMode) print("WS Status Changed: $connected");
 
-      // Auto-sync data when connection is restored to catch up on missed messages
       if (connected) {
         fetchChats();
       }
@@ -56,6 +55,16 @@ class ChatRepository {
   static const String _keyUser = 'current_user';
   static const String _keyTheme = 'is_dark_mode';
   static const String _keyChats = 'local_chats';
+
+  // --- Background Isolate Helpers ---
+  static List<Chat> _decodeChats(String jsonStr) {
+    final List<dynamic> decoded = jsonDecode(jsonStr);
+    return decoded.map((e) => Chat.fromLocalJson(e)).toList();
+  }
+
+  static String _encodeChats(List<Chat> chats) {
+    return jsonEncode(chats.map((c) => c.toJson()).toList());
+  }
 
   // --- Startup ---
 
@@ -74,11 +83,11 @@ class ChatRepository {
         } catch (_) {}
       }
 
+      // Load Local Chats
       final chatsJson = prefs.getString(_keyChats);
       if (chatsJson != null) {
         try {
-          final List<dynamic> decoded = jsonDecode(chatsJson);
-          final localChats = decoded.map((e) => Chat.fromLocalJson(e)).toList();
+          final localChats = await compute(_decodeChats, chatsJson);
           _ref.read(chatListProvider.notifier).state = localChats;
         } catch (e) {
           if (kDebugMode) print("Error loading local chats: $e");
@@ -152,18 +161,16 @@ class ChatRepository {
     if (chat.messages.isEmpty) return;
 
     try {
-      // Find the last incoming message (not from me)
       final lastIncoming = chat.messages.lastWhere(
               (m) => !m.isMe,
           orElse: () => Message(id: '', senderId: '', senderName: '', text: '', timestamp: DateTime.now(), isMe: true)
       );
 
-      // Send receipt only if we have a valid ID and it's not already marked read locally
       if (lastIncoming.id.isNotEmpty && lastIncoming.status != MessageStatus.read) {
         _ws.sendMarkRead(lastIncoming.id);
       }
     } catch (e) {
-      // Ignore if filtering fails
+      // Ignore
     }
   }
 
@@ -226,11 +233,10 @@ class ChatRepository {
       final msgIndex = chat.messages.indexWhere((m) => m.id == messageId);
 
       if (msgIndex != -1) {
-        // Waterfall Update: Mark this message AND all previous unread 'isMe' messages as read.
         final newMessages = List<Message>.from(chat.messages);
         bool hasUpdates = false;
 
-        // Iterate up to the read message
+        // Waterfall update: Mark all previous messages as read
         for (int j = 0; j <= msgIndex; j++) {
           final msg = newMessages[j];
           if (msg.isMe && msg.status != MessageStatus.read) {
@@ -320,8 +326,10 @@ class ChatRepository {
 
     if (chatIndex != -1) {
       final currentChat = chats[chatIndex];
+      // Dedupe
       if (currentChat.messages.any((m) => m.id == newMessage.id)) return;
 
+      // Filter out temp 'sending' messages if they match content
       final filteredMessages = currentChat.messages.where((m) {
         if (m.isMe && m.status == MessageStatus.sending && m.text == newMessage.text) {
           return false;
@@ -364,6 +372,7 @@ class ChatRepository {
   }
 
   void _handleTypingIndicator(Map<String, dynamic> payload) {
+    // ... (Implementation same as previous)
     final isTyping = payload['is_typing'] == true;
     final username = payload['username'] ?? 'Someone';
     final currentUser = _ref.read(userProvider);
@@ -419,35 +428,32 @@ class ChatRepository {
     }
   }
 
-  // --- Handlers for Join/Leave/Remove ---
-
-  void _handleUserJoined(Map<String, dynamic> payload) {
-    _updateGroupMembership(payload, "has been added to the group", true);
-  }
-
+  void _handleUserJoined(Map<String, dynamic> payload) => _updateGroupMembership(payload, "has been added to the group", true);
   void _handleUserLeft(Map<String, dynamic> payload) {
-    _updateGroupMembership(payload, "left the group", false);
-  }
+    final userId = payload['user_id']?.toString();
+    final currentUser = _ref.read(userProvider);
 
-  void _handleUserRemoved(Map<String, dynamic> payload) {
-    _updateGroupMembership(payload, "has been removed from the group", false);
+    if (userId == currentUser?.id) {
+      _updateGroupMembership(payload, "left the group", false);
+      final groupId = payload['group_id']?.toString();
+      if (groupId != null) _ws.unsubscribeFromGroup(groupId);
+    } else {
+      _updateGroupMembership(payload, "left the group", false);
+    }
   }
+  void _handleUserRemoved(Map<String, dynamic> payload) => _updateGroupMembership(payload, "has been removed from the group", false);
 
   void _updateGroupMembership(Map<String, dynamic> payload, String actionText, bool isJoin) {
     final groupId = payload['group_id']?.toString();
     final userId = payload['user_id']?.toString();
     final String username = payload['username']?.toString() ?? 'User';
     final currentUser = _ref.read(userProvider);
-
     if (groupId == null || userId == null) return;
-
     final chats = _ref.read(chatListProvider);
     final chatIndex = chats.indexWhere((c) => c.id == groupId);
-
     if (chatIndex != -1) {
       final currentChat = chats[chatIndex];
       final sysMsg = _createSystemMessage("$username $actionText");
-
       List<User> newParticipants = List<User>.from(currentChat.participants);
       if (isJoin) {
         if (!newParticipants.any((u) => u.id == userId)) {
@@ -456,12 +462,10 @@ class ChatRepository {
       } else {
         newParticipants.removeWhere((u) => u.id == userId);
       }
-
       bool isMember = currentChat.isMember;
       if (userId == currentUser?.id) {
         isMember = isJoin;
       }
-
       final updatedChat = Chat(
         id: currentChat.id,
         name: currentChat.name,
@@ -472,7 +476,6 @@ class ChatRepository {
         eventLog: currentChat.eventLog,
         isMember: isMember,
       );
-
       final newChatList = List<Chat>.from(chats);
       newChatList[chatIndex] = updatedChat;
       Future.microtask(() {
@@ -484,19 +487,18 @@ class ChatRepository {
 
   void saveChatsToLocal({bool immediate = false}) {
     if (_saveDebounce?.isActive ?? false) _saveDebounce!.cancel();
-
     void persist() {
       final chats = _ref.read(chatListProvider);
-      SharedPreferences.getInstance().then((prefs) {
-        try {
-          final jsonStr = jsonEncode(chats.map((c) => c.toJson()).toList());
-          prefs.setString(_keyChats, jsonStr);
-        } catch (e) {
-          if (kDebugMode) print("Error saving local chats: $e");
-        }
+      compute(_encodeChats, chats).then((jsonStr) {
+        SharedPreferences.getInstance().then((prefs) {
+          try {
+            prefs.setString(_keyChats, jsonStr);
+          } catch (e) {
+            if (kDebugMode) print("Error saving local chats: $e");
+          }
+        });
       });
     }
-
     if (immediate) {
       persist();
     } else {
@@ -518,7 +520,6 @@ class ChatRepository {
   }
 
   // --- Actions ---
-
   Future<void> login(String username, String password) async {
     _ref.read(isLoadingProvider.notifier).state = true;
     try {
@@ -526,21 +527,13 @@ class ChatRepository {
       final tokens = response['tokens'];
       final accessToken = tokens['access'];
       await _api.setTokens(access: accessToken, refresh: tokens['refresh']);
-
       final userData = response['user'];
-      final user = User(
-        id: userData['id']?.toString() ?? '',
-        email: userData['email'] ?? '',
-        name: userData['username'] ?? username,
-        isOnline: true,
-      );
-
+      final user = User(id: userData['id']?.toString() ?? '', email: userData['email'] ?? '', name: userData['username'] ?? username, isOnline: true);
       _ref.read(userProvider.notifier).state = user;
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_keyUser, jsonEncode(user.toJson()));
       } catch (_) {}
-
       _initWebSocket(accessToken);
       await Future.wait([fetchUsers(), fetchChats()]);
     } catch (e) {
@@ -602,30 +595,38 @@ class ChatRepository {
       final response = await _api.get('/groups/');
       final List groupData = (response is Map && response.containsKey('results')) ? response['results'] : [];
       final fetchedGroups = groupData.map((e) => Chat.fromGroupJson(e)).toList();
-
       final privateChats = await _fetchPrivateChatsFromHistory();
       final groupMessagesMap = await _fetchRecentGroupMessages();
-
       final currentChats = _ref.read(chatListProvider);
       final mergedMap = <String, Chat>{};
 
       for (var chat in privateChats) {
         mergedMap[chat.id] = chat;
       }
-
       for (var group in fetchedGroups) {
         final local = currentChats.where((c) => c.id == group.id).firstOrNull;
-
         List<Message> messages = [];
         if (local != null) messages = List.from(local.messages);
 
+        // Merge fetched history
         if (groupMessagesMap.containsKey(group.id)) {
           final fetchedMsgs = groupMessagesMap[group.id]!;
+          // Use Map for faster lookup and update
+          final msgMap = {for (var m in messages) m.id: m};
+
           for (var m in fetchedMsgs) {
-            if (!messages.any((exist) => exist.id == m.id)) {
-              messages.add(m);
+            if (msgMap.containsKey(m.id)) {
+              // Smart Merge: If server says Read, but local says Delivered/Sent -> update to Read
+              // If local says Read (from active chat), keep Read.
+              final localMsg = msgMap[m.id]!;
+              if (m.status == MessageStatus.read && localMsg.status != MessageStatus.read) {
+                msgMap[m.id] = m;
+              }
+            } else {
+              msgMap[m.id] = m;
             }
           }
+          messages = msgMap.values.toList();
           messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
         }
 
@@ -639,23 +640,19 @@ class ChatRepository {
           eventLog: local?.eventLog ?? [],
           isMember: group.isMember,
         );
-
         if (_ws.isConnected.value && group.isMember) _ws.subscribeToGroup(group.id);
       }
-
       for (var local in currentChats) {
         if (!mergedMap.containsKey(local.id)) {
           mergedMap[local.id] = local;
         }
       }
-
       final sortedChats = mergedMap.values.toList();
       sortedChats.sort((a, b) {
         final aTime = a.messages.isNotEmpty ? a.messages.last.timestamp : DateTime(1970);
         final bTime = b.messages.isNotEmpty ? b.messages.last.timestamp : DateTime(1970);
         return bTime.compareTo(aTime);
       });
-
       _ref.read(chatListProvider.notifier).state = sortedChats;
       saveChatsToLocal();
     } catch (e) {
@@ -665,57 +662,39 @@ class ChatRepository {
 
   Future<Map<String, List<Message>>> _fetchRecentGroupMessages() async {
     try {
-      final response = await _api.get('/messages/', params: {
-        'message_type': 'group',
-        'page_size': '200'
-      });
-
+      final response = await _api.get('/messages/', params: {'message_type': 'group', 'page_size': '200'});
       final List data = (response is Map && response.containsKey('results')) ? response['results'] : [];
       final currentUser = _ref.read(userProvider);
       if (currentUser == null) return {};
-
       final Map<String, List<Message>> msgsByGroup = {};
-
       for (var msgJson in data) {
         final msg = Message.fromJson(msgJson, currentUser.id);
         final groupId = msgJson['group']?.toString();
         if (groupId != null) {
-          if (!msgsByGroup.containsKey(groupId)) {
-            msgsByGroup[groupId] = [];
-          }
+          if (!msgsByGroup.containsKey(groupId)) msgsByGroup[groupId] = [];
           msgsByGroup[groupId]!.add(msg);
         }
       }
       return msgsByGroup;
     } catch (e) {
-      if (kDebugMode) print("Group history fetch error: $e");
       return {};
     }
   }
 
   Future<List<Chat>> _fetchPrivateChatsFromHistory() async {
     try {
-      final response = await _api.get('/messages/', params: {
-        'message_type': 'private',
-        'page_size': '100'
-      });
-
+      final response = await _api.get('/messages/', params: {'message_type': 'private', 'page_size': '100'});
       final List data = (response is Map && response.containsKey('results')) ? response['results'] : [];
       final currentUser = _ref.read(userProvider);
       if (currentUser == null) return [];
-
       final Map<String, List<Message>> msgsByPartner = {};
       final Map<String, User> partners = {};
-
       for (var msgJson in data) {
         final msg = Message.fromJson(msgJson, currentUser.id);
-
         final senderData = msgJson['sender'];
         final recipientData = msgJson['recipient'];
-
         String partnerId;
         User partnerUser;
-
         if (senderData['id'].toString() == currentUser.id) {
           partnerId = recipientData['id'].toString();
           partnerUser = User.fromJson(recipientData);
@@ -723,14 +702,12 @@ class ChatRepository {
           partnerId = senderData['id'].toString();
           partnerUser = User.fromJson(senderData);
         }
-
         if (!msgsByPartner.containsKey(partnerId)) {
           msgsByPartner[partnerId] = [];
           partners[partnerId] = partnerUser;
         }
         msgsByPartner[partnerId]!.add(msg);
       }
-
       final List<Chat> restoredChats = [];
       msgsByPartner.forEach((pid, msgs) {
         msgs.sort((a, b) => a.timestamp.compareTo(b.timestamp));
@@ -743,10 +720,8 @@ class ChatRepository {
           unreadCount: 0,
         ));
       });
-
       return restoredChats;
     } catch (e) {
-      if (kDebugMode) print("Private chat restore error: $e");
       return [];
     }
   }
@@ -756,37 +731,31 @@ class ChatRepository {
       if (isGroup) {
         fetchGroupMembers(chatId).catchError((e){});
       }
-
       final Map<String, String> params = isGroup
           ? {'group': chatId, 'message_type': 'group'}
           : {'recipient': chatId, 'message_type': 'private'};
-
       final response = await _api.get('/messages/', params: params);
       final List data = (response is Map && response.containsKey('results')) ? response['results'] : [];
-
       final currentUser = _ref.read(userProvider);
       if (currentUser == null) return;
-
       final chats = _ref.read(chatListProvider);
       final chatIndex = chats.indexWhere((c) => isGroup
           ? c.id == chatId
           : c.participants.any((p) => p.id == chatId && p.id != currentUser.id));
-
       if (chatIndex != -1) {
         final newMsgs = data.map((e) => Message.fromJson(e, currentUser.id)).toList();
         newMsgs.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-
         final currentMessages = chats[chatIndex].messages;
         final mergedMessages = <Message>[];
-
         final localMsgMap = {for (var m in currentMessages) m.id: m};
 
         for (var newMsg in newMsgs) {
           if (localMsgMap.containsKey(newMsg.id)) {
             final local = localMsgMap[newMsg.id]!;
-            // If local is 'read' but server says 'delivered', trust local
             if (local.status == MessageStatus.read && newMsg.status != MessageStatus.read) {
               mergedMessages.add(local);
+            } else if (newMsg.status == MessageStatus.read && local.status != MessageStatus.read) {
+              mergedMessages.add(newMsg);
             } else {
               mergedMessages.add(newMsg);
             }
@@ -799,10 +768,8 @@ class ChatRepository {
         !mergedMessages.any((merged) => merged.id == m.id) &&
             (m.status == MessageStatus.sending || m.status == MessageStatus.failed || m.isSystem)
         ).toList();
-
         mergedMessages.addAll(pending);
         mergedMessages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-
         final updatedChat = Chat(
           id: chats[chatIndex].id,
           name: chats[chatIndex].name,
@@ -813,7 +780,6 @@ class ChatRepository {
           messages: mergedMessages,
           isMember: chats[chatIndex].isMember,
         );
-
         final newChatList = List<Chat>.from(chats);
         newChatList[chatIndex] = updatedChat;
         _ref.read(chatListProvider.notifier).state = newChatList;
@@ -829,23 +795,20 @@ class ChatRepository {
       final response = await _api.get('/groups/$chatId/members/');
       final List data = (response is Map && response.containsKey('members')) ? response['members'] : [];
       final newMembers = data.map((m) => User.fromJson(m['user'])).toList();
-
       final chats = _ref.read(chatListProvider);
       final chatIndex = chats.indexWhere((c) => c.id == chatId && c.isGroup);
-
       if (chatIndex != -1) {
         final currentChat = chats[chatIndex];
         final updatedChat = Chat(
           id: currentChat.id,
           name: currentChat.name,
           isGroup: currentChat.isGroup,
+          isMember: currentChat.isMember,
           messages: currentChat.messages,
           participants: newMembers,
           unreadCount: currentChat.unreadCount,
           eventLog: currentChat.eventLog,
-          isMember: currentChat.isMember,
         );
-
         final newChatList = List<Chat>.from(chats);
         newChatList[chatIndex] = updatedChat;
         _ref.read(chatListProvider.notifier).state = newChatList;
@@ -860,7 +823,6 @@ class ChatRepository {
     final chats = _ref.read(chatListProvider);
     final currentUser = _ref.read(userProvider);
     if (currentUser == null) throw Exception("User not logged in");
-
     try {
       return chats.firstWhere((c) => !c.isGroup && c.participants.any((p) => p.id == otherUser.id));
     } catch (_) {
@@ -880,7 +842,6 @@ class ChatRepository {
   Future<void> resendMessage(String chatId, Message message, bool isGroup) async {
     final chats = _ref.read(chatListProvider);
     final chatIndex = chats.indexWhere((c) => isGroup ? c.id == chatId : c.participants.any((p) => p.id == chatId));
-
     if (chatIndex != -1) {
       final updatedMsgs = chats[chatIndex].messages.where((m) => m.id != message.id).toList();
       final updatedChat = Chat(
@@ -903,7 +864,6 @@ class ChatRepository {
   Future<void> sendMessage(String targetId, String content, bool isGroup, {Message? replyTo}) async {
     final currentUser = _ref.read(userProvider);
     if (currentUser == null) return;
-
     final endpoint = '/messages/';
     final body = {
       'content': content,
@@ -911,12 +871,8 @@ class ChatRepository {
       if (isGroup) 'group': targetId else 'recipient_id': targetId,
       if (replyTo != null) 'reply_to_id': replyTo.id,
     };
-
     final chats = _ref.read(chatListProvider);
-    final chatIndex = chats.indexWhere((c) => isGroup
-        ? c.id == targetId
-        : c.participants.any((p) => p.id == targetId));
-
+    final chatIndex = chats.indexWhere((c) => isGroup ? c.id == targetId : c.participants.any((p) => p.id == targetId));
     if (chatIndex != -1) {
       final tempMsg = Message(
         id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
@@ -930,7 +886,6 @@ class ChatRepository {
         replyToSender: replyTo?.senderName,
         replyToContent: replyTo?.text,
       );
-
       final updatedChat = Chat(
         id: chats[chatIndex].id,
         name: chats[chatIndex].name,
@@ -941,14 +896,12 @@ class ChatRepository {
         messages: [...chats[chatIndex].messages, tempMsg],
         isMember: chats[chatIndex].isMember,
       );
-
       final newChatList = List<Chat>.from(chats);
       newChatList.removeAt(chatIndex);
       newChatList.insert(0, updatedChat);
       _ref.read(chatListProvider.notifier).state = newChatList;
       saveChatsToLocal();
     }
-
     try {
       await _api.post(endpoint, body);
     } catch (e) {
@@ -959,7 +912,6 @@ class ChatRepository {
           final msgs = List<Message>.from(currentChats[currentIndex].messages);
           if (msgs.isNotEmpty && msgs.last.status == MessageStatus.sending) {
             msgs.last.status = MessageStatus.failed;
-
             final failedChat = Chat(
               id: currentChats[currentIndex].id,
               name: currentChats[currentIndex].name,
@@ -983,19 +935,14 @@ class ChatRepository {
 
   Future<Chat> createGroup(String name, List<User> members) async {
     try {
-      final response = await _api.post('/groups/', {
-        'name': name,
-        'description': 'Created via Chatty'
-      });
+      final response = await _api.post('/groups/', {'name': name, 'description': 'Created via Chatty'});
       final newChat = Chat.fromGroupJson(response);
       final currentUser = _ref.read(userProvider);
       if (currentUser != null) newChat.participants.add(currentUser);
-
       final currentChats = _ref.read(chatListProvider);
       _ref.read(chatListProvider.notifier).state = [newChat, ...currentChats];
       saveChatsToLocal();
       _ws.subscribeToGroup(newChat.id);
-
       return newChat;
     } catch (e) {
       rethrow;
@@ -1013,10 +960,8 @@ class ChatRepository {
     }
   }
 
-  // Fixed: Change return type to Future<void> to allow awaiting in UI
   Future<void> leaveGroup(String chatId) async {
     final chats = _ref.read(chatListProvider);
-
     try {
       final index = chats.indexWhere((c) => c.id == chatId);
       if (index != -1) {
@@ -1025,7 +970,7 @@ class ChatRepository {
           id: chat.id,
           name: chat.name,
           isGroup: true,
-          isMember: false, // Mark as not member
+          isMember: false,
           messages: chat.messages,
           participants: chat.participants,
           unreadCount: chat.unreadCount,
@@ -1039,7 +984,6 @@ class ChatRepository {
       await _api.post('/groups/$chatId/leave/', {});
     } catch (e) {
       if (kDebugMode) print("Error leaving group: $e");
-      // Revert if API call failed
       await fetchChats();
       rethrow;
     }
