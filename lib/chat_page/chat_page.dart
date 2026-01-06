@@ -8,6 +8,8 @@ import 'package:intl/intl.dart';
 import '../model/data_models.dart';
 import '../model/responsive_helper.dart';
 import '../services/chat_repository.dart';
+import 'components/chat_date_header.dart';
+import 'components/chat_input_area.dart';
 
 // Strictly for Private Chats
 class ChatPage extends ConsumerStatefulWidget {
@@ -241,8 +243,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final inputColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
     final isDesktop = widget.isDesktop;
 
-    final chatList = ref.watch(chatListProvider);
-    final currentChat = chatList.firstWhere((c) => c.id == _chatId, orElse: () => widget.chat);
+
+
+    // OPTIMIZATION: Only rebuild if THIS chat changes.
+    final currentChat = ref.watch(chatListProvider.select(
+      (chats) => chats.firstWhere((c) => c.id == _chatId, orElse: () => widget.chat)
+    ));
 
     // Extracted typing logic to _PrivateChatTitle widget to prevent full rebuilds
 
@@ -356,7 +362,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          if (showDate) _DateHeader(date: msg.timestamp, isDark: isDark),
+                          if (showDate) ChatDateHeader(date: msg.timestamp, isDark: isDark),
                           GestureDetector(
                             onLongPress: () => _onSwipeReply(msg),
                             child: Dismissible(
@@ -432,50 +438,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               ),
             ),
 
-          Container(
-            padding: EdgeInsets.all(isDesktop ? 20 : 10),
-            decoration: BoxDecoration(
-              color: backgroundColor,
-              boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 5)],
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: inputColor,
-                      borderRadius: BorderRadius.circular(25),
-                    ),
-                    child: TextField(
-                      controller: _messageController,
-                      focusNode: _inputFocusNode,
-                      autofocus: isDesktop,
-                      onChanged: _onTextChanged,
-                      style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16)),
-                      // Optimization: Multi-line input support
-                      keyboardType: TextInputType.multiline,
-                      minLines: 1,
-                      maxLines: 5,
-                      textCapitalization: TextCapitalization.sentences,
-                      decoration: const InputDecoration(
-                        hintText: "Type a message...",
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      ),
-                      onSubmitted: (_) => _sendMessage(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                CircleAvatar(
-                  backgroundColor: const Color(0xFF1A60FF),
-                  child: IconButton(
-                    icon: const Icon(Icons.send, color: Colors.white, size: 20),
-                    onPressed: _sendMessage,
-                  ),
-                ),
-              ],
-            ),
+          ChatInputArea(
+            controller: _messageController,
+            focusNode: _inputFocusNode,
+            onChanged: _onTextChanged,
+            onSubmitted: _sendMessage,
+            hintText: "Message ${currentChat.isGroup ? currentChat.name : (currentChat.name)}...",
+            isDesktop: isDesktop,
+            isDark: isDark,
           ),
         ],
       ),
@@ -526,44 +496,7 @@ class _PrivateChatTitle extends ConsumerWidget {
   }
 }
 
-class _DateHeader extends StatelessWidget {
-  final DateTime date;
-  final bool isDark;
 
-  const _DateHeader({required this.date, required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = today.subtract(const Duration(days: 1));
-    final dateOnly = DateTime(date.year, date.month, date.day);
-
-    String text;
-    if (dateOnly == today) {
-      text = "Today";
-    } else if (dateOnly == yesterday) {
-      text = "Yesterday";
-    } else {
-      text = DateFormat('MMMM d, y').format(date);
-    }
-
-    return Center(
-      child: Container(
-        margin: EdgeInsets.symmetric(vertical: 12.h),
-        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 4.h),
-        decoration: BoxDecoration(
-          color: isDark ? Colors.grey[800] : Colors.grey[200],
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Text(
-          text,
-          style: TextStyle(fontSize: Responsive.fontSize(context, 12), fontWeight: FontWeight.w500, color: isDark ? Colors.grey[300] : Colors.grey[600]),
-        ),
-      ),
-    );
-  }
-}
 
 class _PrivateMessageBubble extends StatelessWidget {
   final Message message;

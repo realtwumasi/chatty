@@ -83,10 +83,13 @@ class ChatListView extends ConsumerWidget {
     return RawKeyboardListener(
       focusNode: listFocusNode,
       onKey: (event) {
-         // Basic arrow key navigation support could be re-implemented here if needed,
-         // but simplifying for now as ListView handles focus well usually.
-         // If we need custom selection movement, we need to pass that logic down or handle it in parent.
-         // For now, let's keep it simple.
+         if (event is RawKeyDownEvent) {
+           if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+             _selectNextChat(listItems);
+           } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+             _selectPreviousChat(listItems);
+           }
+         }
       },
       child: Scrollbar(
         controller: scrollController,
@@ -134,5 +137,47 @@ class ChatListView extends ConsumerWidget {
         ),
       ),
     );
+  void _selectNextChat(List<dynamic> items) {
+    if (items.isEmpty) return;
+    final chatItems = items.whereType<Chat>().toList();
+    if (chatItems.isEmpty) return;
+
+    if (selectedChat == null) {
+      onChatSelected(chatItems.first);
+      return;
+    }
+
+    final currentIndex = chatItems.indexWhere((c) => c.id == selectedChat!.id);
+    if (currentIndex != -1 && currentIndex < chatItems.length - 1) {
+      onChatSelected(chatItems[currentIndex + 1]);
+      _scrollToIndex(items.indexOf(chatItems[currentIndex + 1]));
+    }
+  }
+
+  void _selectPreviousChat(List<dynamic> items) {
+    if (items.isEmpty) return;
+    final chatItems = items.whereType<Chat>().toList();
+    if (chatItems.isEmpty) return;
+
+    if (selectedChat == null) {
+      onChatSelected(chatItems.last);
+      return;
+    }
+
+    final currentIndex = chatItems.indexWhere((c) => c.id == selectedChat!.id);
+    if (currentIndex > 0) {
+      onChatSelected(chatItems[currentIndex - 1]);
+      _scrollToIndex(items.indexOf(chatItems[currentIndex - 1]));
+    }
+  }
+
+  void _scrollToIndex(int index) {
+    if (!scrollController.hasClients) return;
+    // Simple estimation: 72 is approx height of a tile
+    final offset = index * 72.0; 
+    // Ideally we'd use scroll_to_index package, but simple autoscroll is fine for now
+    if (offset < scrollController.offset || offset > scrollController.offset + scrollController.position.viewportDimension) {
+        scrollController.animateTo(offset, duration: const Duration(milliseconds: 200), curve: Curves.easeInOut);
+    }
   }
 }
