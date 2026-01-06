@@ -49,7 +49,6 @@ class Message {
   final bool isSystem;
   MessageStatus status;
 
-  // Reply fields
   final String? replyToId;
   final String? replyToSender;
   final String? replyToContent;
@@ -73,8 +72,6 @@ class Message {
     final senderId = senderData['id']?.toString() ?? json['sender_id']?.toString() ?? '';
     final senderName = senderData['username'] ?? json['sender_username'] ?? 'Unknown';
 
-    // Handle reply data from API (assuming flattening or nested object)
-    // If backend returns 'reply_to' object:
     final replyData = json['reply_to'] as Map<String, dynamic>?;
 
     return Message(
@@ -84,7 +81,7 @@ class Message {
       text: json['content'] ?? '',
       timestamp: DateTime.tryParse(json['created_at'] ?? json['timestamp'] ?? '') ?? DateTime.now(),
       isMe: senderId == currentUserId,
-      status: MessageStatus.sent, // Default to sent if not provided
+      status: MessageStatus.sent,
       isSystem: json['is_system'] ?? false,
       replyToId: replyData?['id']?.toString() ?? json['reply_to_id']?.toString(),
       replyToSender: replyData?['sender_username'] ?? json['reply_to_sender']?.toString(),
@@ -92,7 +89,6 @@ class Message {
     );
   }
 
-  // For Local Storage
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -141,6 +137,7 @@ class Chat {
   final String id;
   final String name;
   final bool isGroup;
+  final bool isMember; // Added to track if user has joined
   final List<Message> messages;
   final List<User> participants;
   int unreadCount;
@@ -152,6 +149,7 @@ class Chat {
     required this.isGroup,
     required this.messages,
     required this.participants,
+    this.isMember = true, // Default to true for private chats
     this.unreadCount = 0,
     this.eventLog = const [],
   });
@@ -161,18 +159,19 @@ class Chat {
       id: json['id']?.toString() ?? '',
       name: json['name'] ?? 'Group Chat',
       isGroup: true,
+      isMember: json['is_member'] ?? false, // From API
       unreadCount: 0,
       messages: [],
       participants: [],
     );
   }
 
-  // For Local Storage
   Map<String, dynamic> toJson() {
     return {
       'id': id,
       'name': name,
       'isGroup': isGroup,
+      'isMember': isMember,
       'messages': messages.map((m) => m.toJson()).toList(),
       'participants': participants.map((u) => u.toJson()).toList(),
       'unreadCount': unreadCount,
@@ -184,6 +183,7 @@ class Chat {
       id: json['id'],
       name: json['name'],
       isGroup: json['isGroup'],
+      isMember: json['isMember'] ?? true, // Default to true for backward compatibility
       messages: (json['messages'] as List?)
           ?.map((m) => Message.fromLocalJson(m))
           .toList() ??

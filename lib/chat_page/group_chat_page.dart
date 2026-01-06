@@ -236,7 +236,13 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                               color: isDark ? Colors.grey[800] : Colors.grey[200],
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            child: Text(message.text, style: TextStyle(fontSize: Responsive.fontSize(context, 12), color: isDark ? Colors.grey[300] : Colors.grey[800])),
+                            child: Text(
+                              message.text,
+                              style: TextStyle(
+                                  fontSize: Responsive.fontSize(context, 12),
+                                  color: isDark ? Colors.grey[300] : Colors.grey[800]
+                              ),
+                            ),
                           ),
                         );
                       }
@@ -512,6 +518,7 @@ class _GroupMessageBubble extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // Reply Context
                   if (message.replyToId != null)
                     Container(
                       margin: EdgeInsets.only(bottom: 6),
@@ -524,8 +531,14 @@ class _GroupMessageBubble extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(message.replyToSender ?? "Unknown", style: TextStyle(color: isMe ? Colors.white70 : senderColor, fontWeight: FontWeight.bold, fontSize: Responsive.fontSize(context, 11))),
-                          Text(message.replyToContent ?? "...", style: TextStyle(color: isMe ? Colors.white60 : (isDark ? Colors.grey[300] : Colors.black54), fontSize: Responsive.fontSize(context, 11), overflow: TextOverflow.ellipsis), maxLines: 1),
+                          Text(
+                              message.replyToSender ?? "Unknown",
+                              style: TextStyle(color: isMe ? Colors.white70 : senderColor, fontWeight: FontWeight.bold, fontSize: Responsive.fontSize(context, 11))
+                          ),
+                          Text(
+                              message.replyToContent ?? "...",
+                              style: TextStyle(color: isMe ? Colors.white60 : (isDark ? Colors.grey[300] : Colors.black54), fontSize: Responsive.fontSize(context, 11), overflow: TextOverflow.ellipsis), maxLines: 1
+                          ),
                         ],
                       ),
                     ),
@@ -560,7 +573,7 @@ class _GroupMessageBubble extends StatelessWidget {
                                 (message.status == MessageStatus.read
                                     ? Icons.done_all
                                     : (message.status == MessageStatus.failed ? Icons.error : Icons.done)),
-                                size: 12,
+                                size: Responsive.fontSize(context, 12),
                                 color: message.status == MessageStatus.read ? Colors.lightBlueAccent : timeColor,
                               ),
                             ]
@@ -590,6 +603,7 @@ class _GroupInfoContent extends ConsumerWidget {
     final currentUser = ref.watch(userProvider);
     final chatList = ref.watch(chatListProvider);
 
+    // Find the chat object dynamically so UI updates when members change
     final chat = chatList.firstWhere((c) => c.id == chatId, orElse: () => Chat(id: chatId, name: 'Unknown', isGroup: true, messages: [], participants: []));
 
     return Padding(
@@ -601,15 +615,7 @@ class _GroupInfoContent extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text("Group Members", style: TextStyle(fontSize: Responsive.fontSize(context, 18), fontWeight: FontWeight.bold)),
-              IconButton(
-                icon: const Icon(Icons.person_add, color: Color(0xFF1A60FF)),
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (context) => _AddMemberDialog(chatId: chat.id),
-                  );
-                },
-              ),
+              // Removed Add Member button
             ],
           ),
           const Divider(),
@@ -642,7 +648,7 @@ class _GroupInfoContent extends ConsumerWidget {
                     }
                   },
                   itemBuilder: (context) => [
-                    if (!isMe) const PopupMenuItem(value: 'msg', child: Text("Message")),
+                    if (!isMe) PopupMenuItem(value: 'msg', child: Text("Message", style: TextStyle(fontSize: Responsive.fontSize(context, 14)))),
                     if (!isMe) PopupMenuItem(value: 'remove', child: Text("Remove", style: TextStyle(color: Colors.red, fontSize: Responsive.fontSize(context, 14)))),
                   ],
                 ),
@@ -657,78 +663,10 @@ class _GroupInfoContent extends ConsumerWidget {
               Navigator.pop(context); // Close sheet
               Navigator.pop(context); // Close page
             },
-            child: const Text("Leave Group"),
+            child: Text("Leave Group", style: TextStyle(fontSize: Responsive.fontSize(context, 14))),
           ),
         ],
       ),
-    );
-  }
-}
-
-class _AddMemberDialog extends ConsumerStatefulWidget {
-  final String chatId;
-  const _AddMemberDialog({required this.chatId});
-
-  @override
-  ConsumerState<_AddMemberDialog> createState() => _AddMemberDialogState();
-}
-
-class _AddMemberDialogState extends ConsumerState<_AddMemberDialog> {
-  final TextEditingController _searchCtrl = TextEditingController();
-  String _query = "";
-
-  @override
-  void initState() {
-    super.initState();
-    ref.read(chatRepositoryProvider).fetchUsers();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final allUsers = ref.watch(allUsersProvider);
-    final filtered = _query.isEmpty
-        ? allUsers
-        : allUsers.where((u) => u.name.toLowerCase().contains(_query.toLowerCase())).toList();
-
-    return AlertDialog(
-      title: const Text("Add Member"),
-      content: SizedBox(
-        width: 300,
-        height: 400,
-        child: Column(
-          children: [
-            TextField(
-              controller: _searchCtrl,
-              decoration: const InputDecoration(hintText: "Search users..."),
-              onChanged: (v) => setState(() => _query = v),
-            ),
-            const SizedBox(height: 10),
-            Expanded(
-              child: ListView.builder(
-                itemCount: filtered.length,
-                itemBuilder: (context, index) {
-                  final user = filtered[index];
-                  return ListTile(
-                    leading: CircleAvatar(child: Text(user.name.isNotEmpty ? user.name[0] : '?')),
-                    title: Text(user.name, style: TextStyle(fontSize: Responsive.fontSize(context, 16))),
-                    onTap: () async {
-                      try {
-                        await ref.read(chatRepositoryProvider).addMemberToGroup(widget.chatId, user.id);
-                        if (context.mounted) Navigator.pop(context);
-                      } catch (e) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed to add: $e")));
-                        }
-                      }
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("Close"))],
     );
   }
 }
