@@ -179,6 +179,36 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     }
   }
 
+  void _confirmDeleteGroup(BuildContext context, String groupId) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Delete Group"),
+        content: const Text("Are you sure you want to permanently delete this group? This action cannot be undone."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx); // Close dialog
+              Navigator.pop(context); // Close chat page
+              try {
+                await ref.read(chatRepositoryProvider).deleteGroup(groupId);
+              } catch (e) {
+                if (mounted) {
+                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed to delete group: $e")));
+                }
+              }
+            },
+            child: const Text("Delete", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
   bool _isSameDay(DateTime date1, DateTime date2) {
     return date1.year == date2.year && date1.month == date2.month && date1.day == date2.day;
   }
@@ -230,7 +260,42 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           child: _PrivateChatTitle(chat: currentChat, chatId: _chatId, textColor: textColor),
         ),
         actions: [
-          IconButton(icon: Icon(Icons.more_vert, color: textColor), onPressed: () => _showPrivateChatDetails(currentChat)),
+          IconButton(
+            icon: Icon(Icons.more_vert, color: textColor),
+            onPressed: () {
+              final isCreator = currentChat.isGroup && currentChat.creatorId == ref.read(userProvider)?.id;
+              
+              if (isCreator) {
+                showModalBottomSheet(
+                  context: context,
+                  builder: (ctx) => SafeArea(
+                    child: Wrap(
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.info_outline),
+                          title: const Text('Chat Details'),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _showPrivateChatDetails(currentChat);
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.delete_forever, color: Colors.red),
+                          title: const Text('Delete Group', style: TextStyle(color: Colors.red)),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _confirmDeleteGroup(context, currentChat.id);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              } else {
+                 _showPrivateChatDetails(currentChat);
+              }
+            }
+          ),
         ],
       ),
       body: Column(

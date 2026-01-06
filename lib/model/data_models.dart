@@ -153,6 +153,7 @@ class Chat {
   final List<User> participants;
   int unreadCount;
   final List<String> eventLog;
+  final String? creatorId;
 
   Chat({
     required this.id,
@@ -163,9 +164,18 @@ class Chat {
     this.isMember = true,
     this.unreadCount = 0,
     this.eventLog = const [],
+    this.creatorId,
   });
 
   factory Chat.fromGroupJson(Map<String, dynamic> json) {
+    final creatorData = json['created_by'];
+    String? cId;
+    if (creatorData is Map) {
+      cId = creatorData['id']?.toString();
+    } else if (creatorData != null) {
+      cId = creatorData.toString();
+    }
+
     return Chat(
       id: json['id']?.toString() ?? '',
       name: json['name'] ?? 'Group Chat',
@@ -174,6 +184,44 @@ class Chat {
       unreadCount: 0,
       messages: [],
       participants: [],
+      creatorId: cId,
+    );
+  }
+
+  factory Chat.fromJson(Map<String, dynamic> json, String currentUserId) {
+    final isGroup = json['is_group'] ?? (json['type'] == 'group') ?? false;
+    final messagesData = (json['messages'] as List?) ?? [];
+    final participantsData = (json['participants'] as List?) ?? [];
+    
+    // Creator handling
+    final creatorData = json['created_by'];
+    String? cId;
+    if (creatorData is Map) {
+      cId = creatorData['id']?.toString();
+    } else if (creatorData != null) {
+      cId = creatorData.toString();
+    }
+
+    // Determine Name
+    String chatName = json['name'] ?? 'Chat';
+    if (!isGroup) {
+       // For private chats, name should be the OTHER user's name
+       final other = participantsData.firstWhere(
+           (p) => p['id']?.toString() != currentUserId, 
+           orElse: () => {'username': 'Unknown'}
+       );
+       chatName = other['username'] ?? 'Unknown';
+    }
+
+    return Chat(
+      id: json['id']?.toString() ?? '',
+      name: chatName,
+      isGroup: isGroup,
+      isMember: json['is_member'] ?? true, // Default to true if not specified
+      unreadCount: json['unread_count'] ?? 0,
+      creatorId: cId,
+      messages: messagesData.map((m) => Message.fromJson(m, currentUserId)).toList(),
+      participants: participantsData.map((u) => User.fromJson(u)).toList(),
     );
   }
 
@@ -186,6 +234,7 @@ class Chat {
       'messages': messages.map((m) => m.toJson()).toList(),
       'participants': participants.map((u) => u.toJson()).toList(),
       'unreadCount': unreadCount,
+      'creatorId': creatorId,
     };
   }
 
@@ -204,6 +253,7 @@ class Chat {
           .toList() ??
           [],
       unreadCount: json['unreadCount'] ?? 0,
+      creatorId: json['creatorId'],
     );
   }
 

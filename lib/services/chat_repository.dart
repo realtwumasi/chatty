@@ -633,6 +633,22 @@ class ChatRepository {
     } catch (_) {}
   }
 
+  Future<void> deleteGroup(String groupId) async {
+    try {
+      await _api.delete('/groups/$groupId/');
+      
+      // Optimistically remove from list
+      final currentChats = _ref.read(chatListProvider);
+      final newChats = currentChats.where((c) => c.id != groupId).toList();
+      _ref.read(chatListProvider.notifier).state = newChats;
+      saveChatsToLocal();
+      
+    } catch (e) {
+      if (kDebugMode) print("Delete group error: $e");
+      rethrow;
+    }
+  }
+
   Future<void> fetchUsers() async {
     try {
       final response = await _api.get('/users/');
@@ -659,14 +675,41 @@ class ChatRepository {
   }
 
   Future<void> fetchChats() async {
-    // DEBUG: Inspect the new /api/chats/ endpoint to see if we can switch to it
+    // 1. Optimization Attempt: Use /api/chats/
     try {
-       final test = await _api.get('/chats/');
-       if (kDebugMode) print("DEBUG API CHATS: $test");
+       final response = await _api.get('/chats/');
+       if (response is List) {
+         final currentUser = _ref.read(userProvider);
+         if (currentUser != null) {
+            final newChats = response.map((data) => Chat.fromJson(data, currentUser.id)).toList();
+            
+            // Sort
+            newChats.sort((a, b) {
+              final aTime = a.messages.isNotEmpty ? a.messages.last.timestamp : DateTime(1970);
+              final bTime = b.messages.isNotEmpty ? b.messages.last.timestamp : DateTime(1970);
+              return bTime.compareTo(aTime);
+            });
+
+            _ref.read(chatListProvider.notifier).state = newChats;
+            saveChatsToLocal();
+            
+            // Subscribe to groups
+            if (_ws.isConnected.value) {
+              for (final chat in newChats) {
+                if (chat.isGroup && chat.isMember) _ws.subscribeToGroup(chat.id);
+              }
+            }
+            
+            if (kDebugMode) print("Optimized chat fetch successful (${newChats.length} chats)");
+            return; // SUCCESS - Skip legacy logic
+         }
+       }
     } catch(e) {
-       if (kDebugMode) print("DEBUG API CHATS ERROR: $e");
+       if (kDebugMode) print("Optimized chat fetch failed: $e. Falling back to legacy.");
+       // Fallthrough to legacy logic
     }
 
+    // 2. Legacy Logic (Fallback)
     try {
       final response = await _api.get('/groups/');
       final List groupData = (response is Map && response.containsKey('results')) ? response['results'] : [];
@@ -711,6 +754,7 @@ class ChatRepository {
           unreadCount: unreadCounts[group.id] ?? (local?.unreadCount ?? 0),
           eventLog: local?.eventLog ?? [],
           isMember: group.isMember,
+          creatorId: group.creatorId ?? local?.creatorId,
         );
 
         if (_ws.isConnected.value && group.isMember) _ws.subscribeToGroup(group.id);
@@ -729,7 +773,8 @@ class ChatRepository {
                  participants: local.participants,
                  unreadCount: unreadCounts[local.id]!,
                  eventLog: local.eventLog,
-                 isMember: local.isMember
+                 isMember: local.isMember,
+                 creatorId: local.creatorId
              );
            } else {
              mergedMap[local.id] = local;
@@ -1154,19 +1199,7 @@ class ChatRepository {
     }
   }
 
-  Future<void> deleteGroup(String chatId) async {
-    try {
-      await _api.delete('/groups/$chatId/');
-      final chats = _ref.read(chatListProvider);
-      final newChats = chats.where((c) => c.id != chatId).toList();
-      _ref.read(chatListProvider.notifier).state = newChats;
-      saveChatsToLocal();
-      _ws.unsubscribeFromGroup(chatId);
-    } catch (e) {
-      await fetchChats();
-      rethrow;
-    }
-  }
+
 
   Future<void> addMemberToGroup(String groupId, String userId) async {
     try {

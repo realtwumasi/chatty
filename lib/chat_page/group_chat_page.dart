@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -180,6 +181,36 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
     }
   }
 
+  void _confirmDeleteGroup(BuildContext context, String groupId) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Delete Group"),
+        content: const Text("Are you sure you want to permanently delete this group? This action cannot be undone."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx); // Close dialog
+              Navigator.pop(context); // Close chat page
+              try {
+                await ref.read(chatRepositoryProvider).deleteGroup(groupId);
+              } catch (e) {
+                if (mounted) {
+                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed to delete group: $e")));
+                }
+              }
+            },
+            child: const Text("Delete", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
   bool _isSameDay(DateTime date1, DateTime date2) {
     return date1.year == date2.year && date1.month == date2.month && date1.day == date2.day;
   }
@@ -209,7 +240,45 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
           child: _GroupChatTitle(chat: currentChat, chatId: _chatId, textColor: textColor),
         ),
         actions: [
-          IconButton(icon: Icon(Icons.more_vert, color: textColor), onPressed: () => _showGroupInfo(_chatId)),
+          PopupMenuButton<String>(
+
+            icon: Icon(Icons.more_vert, color: textColor),
+            onSelected: (value) {
+              if (value == 'info') {
+                _showGroupInfo(_chatId);
+              } else if (value == 'delete') {
+                _confirmDeleteGroup(context, _chatId);
+              }
+            },
+            itemBuilder: (context) {
+              final currentUserId = ref.read(userProvider)?.id;
+              final isCreator = currentChat.creatorId == currentUserId;
+
+              return [
+                const PopupMenuItem(
+                  value: 'info',
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.grey),
+                      SizedBox(width: 8),
+                      Text("Group Info"),
+                    ],
+                  ),
+                ),
+                if (isCreator)
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete_forever, color: Colors.red),
+                        SizedBox(width: 8),
+                        Text("Delete Group", style: TextStyle(color: Colors.red)),
+                      ],
+                    ),
+                  ),
+              ];
+            },
+          ),
         ],
       ),
       body: Column(
