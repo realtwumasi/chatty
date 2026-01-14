@@ -302,7 +302,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         children: [
           Icon(Icons.chat_bubble_outline, size: 80, color: isDark ? Colors.grey[700] : Colors.grey[300]),
           const SizedBox(height: 20),
-          Text("Select a chat to start messaging", style: TextStyle(color: Color.fromRGBO(textColor.r.toInt(), textColor.g.toInt(), textColor.b.toInt(), 0.5), fontSize: Responsive.fontSize(context, 18))),
+          Text("Select a chat to start messaging", style: TextStyle(color: textColor.withOpacity(0.5), fontSize: Responsive.fontSize(context, 18))),
         ],
       ),
     );
