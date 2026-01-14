@@ -51,7 +51,7 @@ class MessageBubble extends StatelessWidget {
       ),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),
+          color: Color.fromRGBO(0, 0, 0, isDark ? 0.3 : 0.05),
           blurRadius: 4,
           offset: const Offset(0, 2),
         )
@@ -89,7 +89,7 @@ class MessageBubble extends StatelessWidget {
                       margin: const EdgeInsets.only(bottom: 8),
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: isMe ? Colors.black.withOpacity(0.1) : (isDark ? Colors.black.withOpacity(0.2) : Colors.grey[100]),
+                        color: isMe ? const Color.fromRGBO(0, 0, 0, 0.1) : (isDark ? const Color.fromRGBO(0, 0, 0, 0.2) : Colors.grey[100]),
                         borderRadius: BorderRadius.circular(8),
                         border: Border(left: BorderSide(color: isMe ? Colors.white70 : (showName ? senderColor : const Color(0xFF1A60FF)), width: 3)),
                       ),

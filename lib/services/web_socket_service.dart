@@ -125,13 +125,6 @@ class WebSocketService {
     _pingTimer = null;
   }
 
-  void _startHeartbeat() {
-    _pingTimer?.cancel();
-    _pingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      send('ping', {});
-    });
-  }
-
   void _attemptReconnect() {
     if (_isDisconnecting || _lastToken == null) return;
 

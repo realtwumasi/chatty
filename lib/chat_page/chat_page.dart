@@ -257,7 +257,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
     final textColor = Theme.of(context).colorScheme.onSurface;
-    final inputColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
     final isDesktop = widget.isDesktop;
 
     // OPTIMIZATION: Only rebuild if THIS chat changes.

@@ -75,8 +75,9 @@ class ChatListView extends ConsumerWidget {
     }
 
     if (listItems.isEmpty) {
-      if (isLoading && chats.isEmpty)
+      if (isLoading && chats.isEmpty) {
         return const Center(child: CircularProgressIndicator());
+      }
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -95,10 +96,10 @@ class ChatListView extends ConsumerWidget {
       );
     }
 
-    return RawKeyboardListener(
+    return KeyboardListener(
       focusNode: listFocusNode,
-      onKey: (event) {
-        if (event is RawKeyDownEvent) {
+      onKeyEvent: (event) {
+        if (event is KeyDownEvent) {
           if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
             _selectNextChat(listItems);
           } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {

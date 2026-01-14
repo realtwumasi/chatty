@@ -55,7 +55,7 @@ class MessageTile extends ConsumerWidget {
     final isTyping = typingUsers.isNotEmpty;
 
     final tileColor = isSelected
-        ? (isDark ? Colors.white.withOpacity(0.1) : const Color(0xFF1A60FF).withOpacity(0.1))
+        ? (isDark ? const Color.fromRGBO(255, 255, 255, 0.1) : const Color.fromRGBO(26, 96, 255, 0.1))
         : null;
 
     final String lastMessage = chat.lastMessagePreview;
@@ -85,7 +85,7 @@ class MessageTile extends ConsumerWidget {
       ),
       child: InkWell(
         onTap: onTap,
-        hoverColor: isDark ? Colors.white.withOpacity(0.05) : const Color(0xFF1A60FF).withOpacity(0.05),
+        hoverColor: isDark ? const Color.fromRGBO(255, 255, 255, 0.05) : const Color.fromRGBO(26, 96, 255, 0.05),
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: EdgeInsets.symmetric(vertical: vPadding, horizontal: hPadding),

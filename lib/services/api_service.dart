@@ -189,6 +189,7 @@ class ApiService {
   }
 
   /// Get a user's public key for encryption
+  /// Returns null if user hasn't enabled encryption (not an error)
   Future<String?> getUserPublicKey(String userId) async {
     if (_accessToken == null) await loadTokens();
     try {
@@ -197,8 +198,16 @@ class ApiService {
       if (response is Map && response['public_key'] != null) {
         return response['public_key'];
       }
+      // User hasn't enabled encryption - this is expected, not an error
+      if (response is Map && response['error'] != null) {
+        if (kDebugMode) print('E2E: User $userId has not enabled encryption (will send unencrypted)');
+      }
     } catch (e) {
-      if (kDebugMode) print('E2E: Failed to get public key for $userId: $e');
+      // Only log actual errors, not "user hasn't enabled encryption"
+      final errorStr = e.toString();
+      if (!errorStr.contains('not enabled')) {
+        if (kDebugMode) print('E2E: Error fetching public key for $userId: $e');
+      }
     }
     return null;
   }

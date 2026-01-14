@@ -237,7 +237,6 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final backgroundColor = Theme.of(context).scaffoldBackgroundColor;
     final textColor = Theme.of(context).colorScheme.onSurface;
-    final inputColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
     final isDesktop = widget.isDesktop;
 
     // OPTIMIZATION: Only rebuild if THIS chat changes.
@@ -609,7 +608,6 @@ class _GroupInfoContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final textColor = Theme.of(context).colorScheme.onSurface;
     final repo = ref.read(chatRepositoryProvider);
     final currentUser = ref.watch(userProvider);
     final chatList = ref.watch(chatListProvider);
