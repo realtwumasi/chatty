@@ -23,28 +23,30 @@ class _CreateAccountState extends ConsumerState<CreateAccount> {
     if (!_formKey.currentState!.validate()) return;
 
     try {
-      await ref.read(chatRepositoryProvider).register(
-          _username.text.trim(),
-          _email.text.trim(),
-          _password.text.trim()
-      );
+      await ref
+          .read(chatRepositoryProvider)
+          .register(
+            _username.text.trim(),
+            _email.text.trim(),
+            _password.text.trim(),
+          );
 
       if (mounted) {
         Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (context) => const HomePage()),
-                (route) => false
+          context,
+          MaterialPageRoute(builder: (context) => const HomePage()),
+          (route) => false,
         );
       }
     } catch (e) {
       if (mounted) {
         final msg = e.toString().replaceAll('ApiException:', '').trim();
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(msg),
-              backgroundColor: Colors.red,
-              behavior: SnackBarBehavior.floating,
-            )
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
     }
@@ -97,14 +99,19 @@ class _CreateAccountState extends ConsumerState<CreateAccount> {
                         style: TextStyle(
                           fontWeight: FontWeight.w400,
                           fontSize: Responsive.fontSize(context, 16),
-                          color: isDark ? Colors.grey[400] : Colors.grey.shade600,
+                          color: isDark
+                              ? Colors.grey[400]
+                              : Colors.grey.shade600,
                         ),
                       ),
                       SizedBox(height: 40.h),
 
                       TextFormField(
                         controller: _username,
-                        style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16)),
+                        style: TextStyle(
+                          color: textColor,
+                          fontSize: Responsive.fontSize(context, 16),
+                        ),
                         autovalidateMode: AutovalidateMode.onUserInteraction,
                         validator: (val) {
                           if (val == null || val.isEmpty) return "Required";
@@ -116,26 +123,54 @@ class _CreateAccountState extends ConsumerState<CreateAccount> {
                         },
                         decoration: InputDecoration(
                           labelText: "Username",
-                          labelStyle: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14)),
+                          labelStyle: TextStyle(
+                            color: hintColor,
+                            fontSize: Responsive.fontSize(context, 14),
+                          ),
                           filled: true,
                           fillColor: inputFillColor,
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF1A60FF), width: 1.5)),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: borderColor),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Color(0xFF1A60FF),
+                              width: 1.5,
+                            ),
+                          ),
                         ),
                       ),
                       SizedBox(height: 16.h),
 
                       TextFormField(
                         controller: _email,
-                        style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16)),
-                        validator: (val) => !val!.contains('@') ? "Invalid Email" : null,
+                        style: TextStyle(
+                          color: textColor,
+                          fontSize: Responsive.fontSize(context, 16),
+                        ),
+                        validator: (val) =>
+                            !val!.contains('@') ? "Invalid Email" : null,
                         decoration: InputDecoration(
                           labelText: "Email",
-                          labelStyle: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14)),
+                          labelStyle: TextStyle(
+                            color: hintColor,
+                            fontSize: Responsive.fontSize(context, 14),
+                          ),
                           filled: true,
                           fillColor: inputFillColor,
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF1A60FF), width: 1.5)),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: borderColor),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Color(0xFF1A60FF),
+                              width: 1.5,
+                            ),
+                          ),
                         ),
                       ),
                       SizedBox(height: 16.h),
@@ -143,15 +178,30 @@ class _CreateAccountState extends ConsumerState<CreateAccount> {
                       TextFormField(
                         controller: _password,
                         obscureText: true,
-                        style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16)),
-                        validator: (val) => val!.length < 1 ? "Required" : null,
+                        style: TextStyle(
+                          color: textColor,
+                          fontSize: Responsive.fontSize(context, 16),
+                        ),
+                        validator: (val) => val!.isEmpty ? "Required" : null,
                         decoration: InputDecoration(
                           labelText: "Password",
-                          labelStyle: TextStyle(color: hintColor, fontSize: Responsive.fontSize(context, 14)),
+                          labelStyle: TextStyle(
+                            color: hintColor,
+                            fontSize: Responsive.fontSize(context, 14),
+                          ),
                           filled: true,
                           fillColor: inputFillColor,
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF1A60FF), width: 1.5)),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: borderColor),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Color(0xFF1A60FF),
+                              width: 1.5,
+                            ),
+                          ),
                         ),
                       ),
                       SizedBox(height: 25.h),
@@ -161,18 +211,39 @@ class _CreateAccountState extends ConsumerState<CreateAccount> {
                         style: ElevatedButton.styleFrom(
                           minimumSize: Size(double.infinity, buttonHeight),
                           backgroundColor: const Color(0xFF1A60FF),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                         child: isLoading
-                            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                            : Text("Create Account", style: TextStyle(color: Colors.white, fontSize: Responsive.fontSize(context, 16))),
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Text(
+                                "Create Account",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: Responsive.fontSize(context, 16),
+                                ),
+                              ),
                       ),
                       SizedBox(height: 16.h),
 
                       TextButton(
                         onPressed: () => Navigator.pop(context),
-                        child: Text("Already Have an account? Log in", style: TextStyle(color: const Color(0xFF1A60FF), fontSize: Responsive.fontSize(context, 14))),
-                      )
+                        child: Text(
+                          "Already Have an account? Log in",
+                          style: TextStyle(
+                            color: const Color(0xFF1A60FF),
+                            fontSize: Responsive.fontSize(context, 14),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),

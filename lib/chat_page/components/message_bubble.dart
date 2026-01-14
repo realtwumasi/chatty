@@ -150,6 +150,15 @@ class MessageBubble extends StatelessWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            // Encryption indicator
+                            if (message.isEncrypted) ...[
+                              Icon(
+                                Icons.lock,
+                                size: 10,
+                                color: isMe ? Colors.white60 : Colors.grey,
+                              ),
+                              const SizedBox(width: 2),
+                            ],
                             Text(
                               "${message.timestamp.hour.toString().padLeft(2, '0')}:${message.timestamp.minute.toString().padLeft(2, '0')}",
                               style: TextStyle(color: timeColor, fontSize: Responsive.fontSize(context, 10)),

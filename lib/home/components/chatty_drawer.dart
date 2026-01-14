@@ -14,7 +14,8 @@ class ChattyDrawer extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final drawerColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
     final textColor = Theme.of(context).colorScheme.onSurface;
-    final currentUser = ref.watch(userProvider) ?? User(id: '', name: 'Guest', email: '');
+    final currentUser =
+        ref.watch(userProvider) ?? User(id: '', name: 'Guest', email: '');
     final repo = ref.read(chatRepositoryProvider);
 
     return Drawer(
@@ -27,26 +28,54 @@ class ChattyDrawer extends ConsumerWidget {
               backgroundColor: Colors.white,
               child: Text(
                 currentUser.name.isNotEmpty ? currentUser.name[0] : '?',
-                style: TextStyle(fontSize: 24.sp, fontWeight: FontWeight.bold, color: const Color(0xFF1A60FF)),
+                style: TextStyle(
+                  fontSize: 24.sp,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFF1A60FF),
+                ),
               ),
             ),
-            accountName: Text(currentUser.name, style: TextStyle(fontSize: Responsive.fontSize(context, 18), fontWeight: FontWeight.bold)),
-            accountEmail: Text(currentUser.email, style: TextStyle(fontSize: Responsive.fontSize(context, 14))),
+            accountName: Text(
+              currentUser.name,
+              style: TextStyle(
+                fontSize: Responsive.fontSize(context, 18),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            accountEmail: Text(
+              currentUser.email,
+              style: TextStyle(fontSize: Responsive.fontSize(context, 14)),
+            ),
           ),
           ListTile(
-            leading: Icon(ref.watch(themeProvider) ? Icons.dark_mode : Icons.light_mode, color: textColor),
-            title: Text("Dark Mode", style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 14))),
+            leading: Icon(
+              ref.watch(themeProvider) ? Icons.dark_mode : Icons.light_mode,
+              color: textColor,
+            ),
+            title: Text(
+              "Dark Mode",
+              style: TextStyle(
+                color: textColor,
+                fontSize: Responsive.fontSize(context, 14),
+              ),
+            ),
             trailing: Switch(
-                value: ref.watch(themeProvider),
-                activeColor: const Color(0xFF1A60FF),
-                onChanged: (val) => repo.toggleTheme()
+              value: ref.watch(themeProvider),
+              activeThumbColor: const Color(0xFF1A60FF),
+              onChanged: (val) => repo.toggleTheme(),
             ),
           ),
           const Spacer(),
           Divider(color: isDark ? Colors.grey[800] : Colors.grey[300]),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
-            title: Text("Logout", style: TextStyle(color: Colors.red, fontSize: Responsive.fontSize(context, 14))),
+            title: Text(
+              "Logout",
+              style: TextStyle(
+                color: Colors.red,
+                fontSize: Responsive.fontSize(context, 14),
+              ),
+            ),
             onTap: () => _handleLogout(context, ref),
           ),
           SizedBox(height: 20.h),
@@ -56,14 +85,32 @@ class ChattyDrawer extends ConsumerWidget {
   }
 
   void _handleLogout(BuildContext context, WidgetRef ref) {
-     showDialog(
+    showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        title: Text("Logout", style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: Responsive.fontSize(context, 18))),
-        content: Text("Are you sure you want to log out?", style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: Responsive.fontSize(context, 14))),
+        title: Text(
+          "Logout",
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurface,
+            fontSize: Responsive.fontSize(context, 18),
+          ),
+        ),
+        content: Text(
+          "Are you sure you want to log out?",
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurface,
+            fontSize: Responsive.fontSize(context, 14),
+          ),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text("Cancel", style: TextStyle(fontSize: Responsive.fontSize(context, 14)))),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(
+              "Cancel",
+              style: TextStyle(fontSize: Responsive.fontSize(context, 14)),
+            ),
+          ),
           TextButton(
             onPressed: () async {
               Navigator.pop(dialogContext);
@@ -72,11 +119,17 @@ class ChattyDrawer extends ConsumerWidget {
                 Navigator.pushAndRemoveUntil(
                   context,
                   MaterialPageRoute(builder: (context) => const SignInPage()),
-                      (route) => false,
+                  (route) => false,
                 );
               }
             },
-            child: Text("Logout", style: TextStyle(color: Colors.red, fontSize: Responsive.fontSize(context, 14))),
+            child: Text(
+              "Logout",
+              style: TextStyle(
+                color: Colors.red,
+                fontSize: Responsive.fontSize(context, 14),
+              ),
+            ),
           ),
         ],
       ),

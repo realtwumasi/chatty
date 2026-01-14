@@ -87,13 +87,12 @@ class _HomePageState extends ConsumerState<HomePage> {
             onPressed: () async {
               Navigator.pop(context);
               await ref.read(chatRepositoryProvider).logout();
-              if (mounted) {
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (context) => const SignInPage()),
-                      (route) => false,
-                );
-              }
+              if (!context.mounted) return;
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (context) => const SignInPage()),
+                    (route) => false,
+              );
             },
             child: Text("Logout", style: TextStyle(color: Colors.red, fontSize: Responsive.fontSize(context, 14))),
           ),

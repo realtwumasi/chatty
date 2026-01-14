@@ -47,6 +47,7 @@ class Message {
   final DateTime timestamp;
   final bool isMe;
   final bool isSystem;
+  final bool isEncrypted;
   MessageStatus status;
 
   final String? replyToId;
@@ -61,6 +62,7 @@ class Message {
     required this.timestamp,
     required this.isMe,
     this.isSystem = false,
+    this.isEncrypted = false,
     this.status = MessageStatus.sent,
     this.replyToId,
     this.replyToSender,
@@ -94,6 +96,7 @@ class Message {
       isMe: senderId == currentUserId,
       status: parsedStatus,
       isSystem: json['is_system'] ?? false,
+      isEncrypted: json['is_encrypted'] ?? false,
       replyToId: replyData?['id']?.toString() ?? json['reply_to_id']?.toString(),
       replyToSender: replyData?['sender_username'] ?? json['reply_to_sender']?.toString(),
       replyToContent: replyData?['content'] ?? json['reply_to_content']?.toString(),
@@ -109,6 +112,7 @@ class Message {
       'timestamp': timestamp.toIso8601String(),
       'isMe': isMe,
       'isSystem': isSystem,
+      'isEncrypted': isEncrypted,
       'status': status.index,
       'replyToId': replyToId,
       'replyToSender': replyToSender,
@@ -125,6 +129,7 @@ class Message {
       timestamp: DateTime.parse(json['timestamp']),
       isMe: json['isMe'],
       isSystem: json['isSystem'] ?? false,
+      isEncrypted: json['isEncrypted'] ?? false,
       status: MessageStatus.values[json['status'] ?? 1],
       replyToId: json['replyToId'],
       replyToSender: json['replyToSender'],

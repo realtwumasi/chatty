@@ -6,7 +6,6 @@ import '../../model/data_models.dart';
 import '../../model/responsive_helper.dart';
 import 'message_tile.dart';
 import 'available_group_tile.dart';
-import '../../services/chat_repository.dart';
 
 class ChatListView extends ConsumerWidget {
   final List<Chat> chats;
@@ -36,16 +35,26 @@ class ChatListView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     var filteredChats = chats;
     if (searchQuery.isNotEmpty) {
-      filteredChats = chats.where((c) => c.name.toLowerCase().contains(searchQuery.toLowerCase())).toList();
+      filteredChats = chats
+          .where(
+            (c) => c.name.toLowerCase().contains(searchQuery.toLowerCase()),
+          )
+          .toList();
     }
 
-    final joinedGroups = filteredChats.where((c) => c.isGroup && c.isMember).toList();
-    final availableGroups = filteredChats.where((c) => c.isGroup && !c.isMember).toList();
+    final joinedGroups = filteredChats
+        .where((c) => c.isGroup && c.isMember)
+        .toList();
+    final availableGroups = filteredChats
+        .where((c) => c.isGroup && !c.isMember)
+        .toList();
     final privateChats = filteredChats.where((c) => !c.isGroup).toList();
 
-    List<dynamic> listItems = []; // Can be Chat or String (header) or Widget (Divider)
+    List<dynamic> listItems =
+        []; // Can be Chat or String (header) or Widget (Divider)
 
-    if (selectedFilterIndex == 0) { // All
+    if (selectedFilterIndex == 0) {
+      // All
       listItems.addAll(privateChats);
       listItems.addAll(joinedGroups);
 
@@ -53,9 +62,11 @@ class ChatListView extends ConsumerWidget {
         listItems.add("available_groups_header");
         listItems.addAll(availableGroups);
       }
-    } else if (selectedFilterIndex == 1) { // Private
+    } else if (selectedFilterIndex == 1) {
+      // Private
       listItems.addAll(privateChats);
-    } else if (selectedFilterIndex == 2) { // Groups
+    } else if (selectedFilterIndex == 2) {
+      // Groups
       listItems.addAll(joinedGroups);
       if (availableGroups.isNotEmpty) {
         listItems.add("available_groups_header");
@@ -64,32 +75,36 @@ class ChatListView extends ConsumerWidget {
     }
 
     if (listItems.isEmpty) {
-      if (isLoading && chats.isEmpty) return const Center(child: CircularProgressIndicator());
+      if (isLoading && chats.isEmpty)
+        return const Center(child: CircularProgressIndicator());
       return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.chat_bubble_outline, size: 48, color: Colors.grey[300]),
-              SizedBox(height: 16),
-              Text(
-                "No chats found",
-                style: TextStyle(color: Colors.grey[400], fontSize: Responsive.fontSize(context, 16)),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.chat_bubble_outline, size: 48, color: Colors.grey[300]),
+            SizedBox(height: 16),
+            Text(
+              "No chats found",
+              style: TextStyle(
+                color: Colors.grey[400],
+                fontSize: Responsive.fontSize(context, 16),
               ),
-            ],
-          )
+            ),
+          ],
+        ),
       );
     }
 
     return RawKeyboardListener(
       focusNode: listFocusNode,
       onKey: (event) {
-         if (event is RawKeyDownEvent) {
-           if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-             _selectNextChat(listItems);
-           } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-             _selectPreviousChat(listItems);
-           }
-         }
+        if (event is RawKeyDownEvent) {
+          if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+            _selectNextChat(listItems);
+          } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+            _selectPreviousChat(listItems);
+          }
+        }
       },
       child: Scrollbar(
         controller: scrollController,
@@ -103,13 +118,23 @@ class ChatListView extends ConsumerWidget {
             if (item == "available_groups_header") {
               return RepaintBoundary(
                 child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 16.w,
+                    vertical: 8.h,
+                  ),
                   child: Row(
                     children: [
                       Expanded(child: Divider(color: Colors.grey[400])),
                       Padding(
                         padding: EdgeInsets.symmetric(horizontal: 8.w),
-                        child: Text("Available groups to join", style: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 12), fontWeight: FontWeight.bold)),
+                        child: Text(
+                          "Available groups to join",
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontSize: Responsive.fontSize(context, 12),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                       Expanded(child: Divider(color: Colors.grey[400])),
                     ],
@@ -176,10 +201,17 @@ class ChatListView extends ConsumerWidget {
   void _scrollToIndex(int index) {
     if (!scrollController.hasClients) return;
     // Simple estimation: 72 is approx height of a tile
-    final offset = index * 72.0; 
+    final offset = index * 72.0;
     // Ideally we'd use scroll_to_index package, but simple autoscroll is fine for now
-    if (offset < scrollController.offset || offset > scrollController.offset + scrollController.position.viewportDimension) {
-        scrollController.animateTo(offset, duration: const Duration(milliseconds: 200), curve: Curves.easeInOut);
+    if (offset < scrollController.offset ||
+        offset >
+            scrollController.offset +
+                scrollController.position.viewportDimension) {
+      scrollController.animateTo(
+        offset,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeInOut,
+      );
     }
   }
 }

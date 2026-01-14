@@ -174,6 +174,58 @@ class ApiService {
     return [];
   }
 
+  // --- E2E Encryption APIs ---
+  
+  /// Upload user's public key for E2E encryption
+  Future<void> uploadPublicKey(String publicKey) async {
+    if (_accessToken == null) await loadTokens();
+    final uri = Uri.parse('$baseUrl/user-keys/me/public-key/');
+    await _requestWithRetry(() => http.post(
+      uri,
+      headers: _headers,
+      body: jsonEncode({'public_key': publicKey}),
+    ));
+    if (kDebugMode) print('E2E: Public key uploaded successfully');
+  }
+
+  /// Get a user's public key for encryption
+  Future<String?> getUserPublicKey(String userId) async {
+    if (_accessToken == null) await loadTokens();
+    try {
+      final uri = Uri.parse('$baseUrl/user-keys/$userId/public-key/');
+      final response = await _requestWithRetry(() => http.get(uri, headers: _headers));
+      if (response is Map && response['public_key'] != null) {
+        return response['public_key'];
+      }
+    } catch (e) {
+      if (kDebugMode) print('E2E: Failed to get public key for $userId: $e');
+    }
+    return null;
+  }
+
+  /// Get public keys for multiple users (for group encryption)
+  Future<Map<String, String>> getBulkPublicKeys(List<String> userIds) async {
+    if (userIds.isEmpty) return {};
+    if (_accessToken == null) await loadTokens();
+    
+    try {
+      final uri = Uri.parse('$baseUrl/bulk-public-keys/');
+      final response = await _requestWithRetry(() => http.post(
+        uri,
+        headers: _headers,
+        body: jsonEncode({'user_ids': userIds}),
+      ));
+      
+      if (response is Map && response['public_keys'] != null) {
+        final publicKeys = response['public_keys'] as Map<String, dynamic>;
+        return publicKeys.map((key, value) => MapEntry(key, value.toString()));
+      }
+    } catch (e) {
+      if (kDebugMode) print('E2E: Failed to get bulk public keys: $e');
+    }
+    return {};
+  }
+
   Map<String, String> get _headers {
     final headers = {
       'Content-Type': 'application/json',

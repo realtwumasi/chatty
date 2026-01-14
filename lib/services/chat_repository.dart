@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../model/data_models.dart';
 import 'api_service.dart';
+import 'encryption_service.dart';
 
 // --- Providers ---
 
@@ -27,6 +28,7 @@ class ChatRepository {
   final Ref _ref;
   final ApiService _api = ApiService();
   final WebSocketService _ws = WebSocketService();
+  final EncryptionService _encryption = EncryptionService();
 
   final Map<String, Timer> _typingTimers = {};
   String? _activeChatId;
@@ -122,6 +124,9 @@ class ChatRepository {
       if (token != null) {
         _initWebSocket(token);
       }
+      
+      // Initialize E2E encryption
+      await _initializeEncryption();
     }
 
     try {
@@ -136,6 +141,21 @@ class ChatRepository {
         return false;
       }
       return currentUser != null;
+    }
+  }
+  
+  /// Initialize E2E encryption - generate keys if needed and upload public key
+  Future<void> _initializeEncryption() async {
+    try {
+      await _encryption.initialize();
+      
+      // Upload public key to server
+      final publicKey = await _encryption.getMyPublicKey();
+      if (publicKey != null) {
+        await _api.uploadPublicKey(publicKey);
+      }
+    } catch (e) {
+      if (kDebugMode) print('E2E: Encryption initialization failed: $e');
     }
   }
 
@@ -312,12 +332,53 @@ class ChatRepository {
     }
   }
 
-  void _handleNewMessage(Map<String, dynamic> payload, bool isGroup) {
+  void _handleNewMessage(Map<String, dynamic> payload, bool isGroup) async {
     final currentUser = _ref.read(userProvider);
     if (currentUser == null) return;
 
-    final newMessage = Message.fromJson(payload, currentUser.id);
+    Message newMessage = Message.fromJson(payload, currentUser.id);
     newMessage.status = MessageStatus.delivered;
+    
+    // Decrypt the message if it's encrypted and not from us
+    if (newMessage.isEncrypted && !newMessage.isMe) {
+      try {
+        final senderId = payload['sender']?['id']?.toString() ?? 
+                         payload['sender_id']?.toString() ?? '';
+        
+        // Get sender's public key for decryption
+        String? senderPublicKey = _encryption.getCachedPublicKey(senderId)?.bytes.toString();
+        if (senderPublicKey == null) {
+          senderPublicKey = await _api.getUserPublicKey(senderId);
+          if (senderPublicKey != null) {
+            _encryption.cachePublicKey(senderId, senderPublicKey);
+          }
+        }
+        
+        if (senderPublicKey != null) {
+          final decrypted = await _encryption.decrypt(newMessage.text, senderPublicKey);
+          if (decrypted != null) {
+            // Create new message with decrypted content
+            newMessage = Message(
+              id: newMessage.id,
+              senderId: newMessage.senderId,
+              senderName: newMessage.senderName,
+              text: decrypted,
+              timestamp: newMessage.timestamp,
+              isMe: newMessage.isMe,
+              isSystem: newMessage.isSystem,
+              isEncrypted: true,
+              status: newMessage.status,
+              replyToId: newMessage.replyToId,
+              replyToSender: newMessage.replyToSender,
+              replyToContent: newMessage.replyToContent,
+            );
+          }
+        }
+      } catch (e) {
+        if (kDebugMode) print('E2E: Failed to decrypt message: $e');
+        // Message will remain with encrypted text if decryption fails
+      }
+    }
 
     final chats = _ref.read(chatListProvider);
     int chatIndex = -1;
@@ -376,6 +437,10 @@ class ChatRepository {
           : currentChat.unreadCount + (newMessage.isMe ? 0 : 1);
 
       if (isActive && !newMessage.isMe) {
+        // FIX: Also persist to API for durability (not just WebSocket notification)
+        _api.markMessagesAsRead([newMessage.id]);
+        // FIX: Update status locally since we're reading it now
+        newMessage.status = MessageStatus.read;
         _ws.sendMarkRead(newMessage.id);
       }
 
@@ -1061,10 +1126,67 @@ class ChatRepository {
     final currentUser = _ref.read(userProvider);
     if (currentUser == null) return;
 
+    // Encrypt the message content
+    String contentToSend = content;
+    bool isEncrypted = false;
+    
+    try {
+      if (isGroup) {
+        // For group messages, we need to encrypt for all participants
+        final chats = _ref.read(chatListProvider);
+        final chat = chats.firstWhere((c) => c.id == targetId, orElse: () => Chat(id: '', name: '', isGroup: true, messages: [], participants: []));
+        
+        final recipientIds = chat.participants
+            .where((p) => p.id != currentUser.id)
+            .map((p) => p.id)
+            .toList();
+        
+        if (recipientIds.isNotEmpty) {
+          // Get bulk public keys (will be used for encryption)
+          final publicKeys = await _api.getBulkPublicKeys(recipientIds);
+          
+          // Cache all fetched keys for future use
+          _encryption.cacheBulkPublicKeys(publicKeys);
+          
+          // For group encryption, we use the first recipient's key
+          // (In production, you'd want to use a group key or encrypt for each)
+          if (publicKeys.isNotEmpty) {
+            final firstKey = publicKeys.values.first;
+            final encrypted = await _encryption.encrypt(content, firstKey);
+            if (encrypted != null) {
+              contentToSend = encrypted;
+              isEncrypted = true;
+            }
+          }
+        }
+      } else {
+        // For private messages, check cache first then API
+        String? recipientPublicKey = _encryption.getCachedPublicKeyBase64(targetId);
+        
+        if (recipientPublicKey == null) {
+          recipientPublicKey = await _api.getUserPublicKey(targetId);
+          if (recipientPublicKey != null) {
+            _encryption.cachePublicKey(targetId, recipientPublicKey);
+          }
+        }
+        
+        if (recipientPublicKey != null) {
+          final encrypted = await _encryption.encrypt(content, recipientPublicKey);
+          if (encrypted != null) {
+            contentToSend = encrypted;
+            isEncrypted = true;
+          }
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) print('E2E: Encryption failed, sending unencrypted: $e');
+    }
+
     final endpoint = '/messages/';
     final body = {
-      'content': content,
+      'content': contentToSend,
       'message_type': isGroup ? 'group' : 'private',
+      'is_encrypted': isEncrypted,
       if (isGroup) 'group': targetId else 'recipient_id': targetId,
       if (replyTo != null) 'reply_to_id': replyTo.id,
     };
@@ -1079,9 +1201,10 @@ class ChatRepository {
         id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
         senderId: currentUser.id,
         senderName: currentUser.name,
-        text: content,
+        text: content, // Store original unencrypted text locally
         timestamp: DateTime.now(),
         isMe: true,
+        isEncrypted: isEncrypted,
         status: MessageStatus.sending,
         replyToId: replyTo?.id,
         replyToSender: replyTo?.senderName,

@@ -4,7 +4,6 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:intl/intl.dart';
 import '../model/data_models.dart';
 import '../model/responsive_helper.dart';
 import '../services/chat_repository.dart';
@@ -17,11 +16,7 @@ class ChatPage extends ConsumerStatefulWidget {
   final Chat chat;
   final bool isDesktop;
 
-  const ChatPage({
-    super.key,
-    required this.chat,
-    this.isDesktop = false,
-  });
+  const ChatPage({super.key, required this.chat, this.isDesktop = false});
 
   @override
   ConsumerState<ChatPage> createState() => _ChatPageState();
@@ -54,12 +49,15 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     });
 
     _scrollController.addListener(_scrollListener);
-    SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
+    SchedulerBinding.instance.addPostFrameCallback(
+      (_) => _scrollToBottom(animated: false),
+    );
   }
 
   void _scrollListener() {
     if (_scrollController.hasClients) {
-      final distanceToBottom = _scrollController.position.maxScrollExtent - _scrollController.offset;
+      final distanceToBottom =
+          _scrollController.position.maxScrollExtent - _scrollController.offset;
       final show = distanceToBottom > 300;
       if (show != _showScrollToBottom) {
         setState(() {
@@ -83,7 +81,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       setState(() => _replyingTo = null);
       if (widget.isDesktop) {
         Future.delayed(const Duration(milliseconds: 100), () {
-           if (mounted) _inputFocusNode.requestFocus();
+          if (mounted) _inputFocusNode.requestFocus();
         });
       }
     }
@@ -124,10 +122,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       }
 
       repo.sendMessage(
-          _chatId,
-          text,
-          false, // isGroup = false
-          replyTo: replyContext
+        _chatId,
+        text,
+        false, // isGroup = false
+        replyTo: replyContext,
       );
 
       repo.sendTyping(_chatId, false, false);
@@ -160,7 +158,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 curve: Curves.easeOut,
               );
             } else {
-              _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+              _scrollController.jumpTo(
+                _scrollController.position.maxScrollExtent,
+              );
             }
           }
         });
@@ -175,7 +175,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         builder: (context) => Dialog(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 400),
-            child: SingleChildScrollView(child: _PrivateChatInfoContent(chat: currentChat)),
+            child: SingleChildScrollView(
+              child: _PrivateChatInfoContent(chat: currentChat),
+            ),
           ),
         ),
       );
@@ -192,7 +194,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text("Delete Group"),
-        content: const Text("Are you sure you want to permanently delete this group? This action cannot be undone."),
+        content: const Text(
+          "Are you sure you want to permanently delete this group? This action cannot be undone.",
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -205,9 +209,10 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               try {
                 await ref.read(chatRepositoryProvider).deleteGroup(groupId);
               } catch (e) {
-                if (mounted) {
-                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed to delete group: $e")));
-                }
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text("Failed to delete group: $e")),
+                );
               }
             },
             child: const Text("Delete", style: TextStyle(color: Colors.red)),
@@ -218,7 +223,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   bool _isSameDay(DateTime date1, DateTime date2) {
-    return date1.year == date2.year && date1.month == date2.month && date1.day == date2.day;
+    return date1.year == date2.year &&
+        date1.month == date2.month &&
+        date1.day == date2.day;
   }
 
   Widget _buildEmptyState(bool isDark) {
@@ -226,7 +233,11 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.chat_bubble_outline, size: 80, color: isDark ? Colors.grey[800] : Colors.grey[200]),
+          Icon(
+            Icons.chat_bubble_outline,
+            size: 80,
+            color: isDark ? Colors.grey[800] : Colors.grey[200],
+          ),
           SizedBox(height: 16.h),
           Text(
             "No messages yet",
@@ -249,12 +260,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     final inputColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
     final isDesktop = widget.isDesktop;
 
-
-
     // OPTIMIZATION: Only rebuild if THIS chat changes.
-    final currentChat = ref.watch(chatListProvider.select(
-      (chats) => chats.firstWhere((c) => c.id == _chatId, orElse: () => widget.chat)
-    ));
+    final currentChat = ref.watch(
+      chatListProvider.select(
+        (chats) =>
+            chats.firstWhere((c) => c.id == _chatId, orElse: () => widget.chat),
+      ),
+    );
 
     // Extracted typing logic to _PrivateChatTitle widget to prevent full rebuilds
 
@@ -263,20 +275,28 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       appBar: AppBar(
         backgroundColor: backgroundColor,
         elevation: 1,
-        leading: isDesktop ? null : IconButton(
-          icon: Icon(Icons.arrow_back, color: textColor),
-          onPressed: () => Navigator.pop(context),
-        ),
+        leading: isDesktop
+            ? null
+            : IconButton(
+                icon: Icon(Icons.arrow_back, color: textColor),
+                onPressed: () => Navigator.pop(context),
+              ),
         title: InkWell(
           onTap: () => _showPrivateChatDetails(currentChat),
-          child: _PrivateChatTitle(chat: currentChat, chatId: _chatId, textColor: textColor),
+          child: _PrivateChatTitle(
+            chat: currentChat,
+            chatId: _chatId,
+            textColor: textColor,
+          ),
         ),
         actions: [
           IconButton(
             icon: Icon(Icons.more_vert, color: textColor),
             onPressed: () {
-              final isCreator = currentChat.isGroup && currentChat.creatorId == ref.read(userProvider)?.id;
-              
+              final isCreator =
+                  currentChat.isGroup &&
+                  currentChat.creatorId == ref.read(userProvider)?.id;
+
               if (isCreator) {
                 showModalBottomSheet(
                   context: context,
@@ -292,8 +312,14 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                           },
                         ),
                         ListTile(
-                          leading: const Icon(Icons.delete_forever, color: Colors.red),
-                          title: const Text('Delete Group', style: TextStyle(color: Colors.red)),
+                          leading: const Icon(
+                            Icons.delete_forever,
+                            color: Colors.red,
+                          ),
+                          title: const Text(
+                            'Delete Group',
+                            style: TextStyle(color: Colors.red),
+                          ),
                           onTap: () {
                             Navigator.pop(ctx);
                             _confirmDeleteGroup(context, currentChat.id);
@@ -304,9 +330,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                   ),
                 );
               } else {
-                 _showPrivateChatDetails(currentChat);
+                _showPrivateChatDetails(currentChat);
               }
-            }
+            },
           ),
         ],
       ),
@@ -316,128 +342,183 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             child: currentChat.messages.isEmpty
                 ? _buildEmptyState(isDark)
                 : Stack(
-              children: [
-                Scrollbar(
-                  controller: _scrollController,
-                  thumbVisibility: isDesktop,
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                    padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
-                    itemCount: currentChat.messages.length,
-                    itemBuilder: (context, index) {
-                      final msg = currentChat.messages[index];
-
-                      if (msg.isSystem) {
-                        return Center(
-                          child: Container(
-                            margin: EdgeInsets.symmetric(vertical: 8.h),
-                            padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 4.h),
-                            decoration: BoxDecoration(
-                              color: isDark ? Colors.grey[800] : Colors.grey[200],
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                                msg.text,
-                                style: TextStyle(
-                                    fontSize: Responsive.fontSize(context, 12),
-                                    color: isDark ? Colors.grey[300] : Colors.grey[800]
-                                )
-                            ),
+                    children: [
+                      Scrollbar(
+                        controller: _scrollController,
+                        thumbVisibility: isDesktop,
+                        child: ListView.builder(
+                          controller: _scrollController,
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 16.w,
+                            vertical: 10.h,
                           ),
-                        );
-                      }
+                          itemCount: currentChat.messages.length,
+                          itemBuilder: (context, index) {
+                            final msg = currentChat.messages[index];
 
-                      bool showDate = false;
-                      bool isFirstInSequence = true;
-
-                      if (index > 0) {
-                        final prevMessage = currentChat.messages[index - 1];
-                        if (prevMessage.senderId == msg.senderId && !prevMessage.isSystem) {
-                          isFirstInSequence = false;
-                        }
-
-                        if (!_isSameDay(prevMessage.timestamp, msg.timestamp)) {
-                          showDate = true;
-                          isFirstInSequence = true;
-                        }
-                      } else {
-                        showDate = true;
-                      }
-
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (showDate) ChatDateHeader(date: msg.timestamp, isDark: isDark),
-                          GestureDetector(
-                            onLongPress: () => _onSwipeReply(msg),
-                            onSecondaryTapUp: (details) {
-                              // Desktop Right-Click Menu
-                              final position = RelativeRect.fromRect(
-                                details.globalPosition & Size.zero, 
-                                Offset.zero & MediaQuery.of(context).size
+                            if (msg.isSystem) {
+                              return Center(
+                                child: Container(
+                                  margin: EdgeInsets.symmetric(vertical: 8.h),
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: 12.w,
+                                    vertical: 4.h,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isDark
+                                        ? Colors.grey[800]
+                                        : Colors.grey[200],
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    msg.text,
+                                    style: TextStyle(
+                                      fontSize: Responsive.fontSize(
+                                        context,
+                                        12,
+                                      ),
+                                      color: isDark
+                                          ? Colors.grey[300]
+                                          : Colors.grey[800],
+                                    ),
+                                  ),
+                                ),
                               );
-                              showMenu(
-                                context: context,
-                                position: position,
-                                items: [
-                                  PopupMenuItem(
-                                    value: 'reply',
-                                    child: Row(children: [const Icon(Icons.reply, size: 20), const SizedBox(width: 8), const Text("Reply")]),
+                            }
+
+                            bool showDate = false;
+                            bool isFirstInSequence = true;
+
+                            if (index > 0) {
+                              final prevMessage =
+                                  currentChat.messages[index - 1];
+                              if (prevMessage.senderId == msg.senderId &&
+                                  !prevMessage.isSystem) {
+                                isFirstInSequence = false;
+                              }
+
+                              if (!_isSameDay(
+                                prevMessage.timestamp,
+                                msg.timestamp,
+                              )) {
+                                showDate = true;
+                                isFirstInSequence = true;
+                              }
+                            } else {
+                              showDate = true;
+                            }
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (showDate)
+                                  ChatDateHeader(
+                                    date: msg.timestamp,
+                                    isDark: isDark,
                                   ),
-                                  PopupMenuItem(
-                                    value: 'copy',
-                                    child: Row(children: [const Icon(Icons.copy, size: 20), const SizedBox(width: 8), const Text("Copy Text")]),
+                                GestureDetector(
+                                  onLongPress: () => _onSwipeReply(msg),
+                                  onSecondaryTapUp: (details) {
+                                    // Desktop Right-Click Menu
+                                    final position = RelativeRect.fromRect(
+                                      details.globalPosition & Size.zero,
+                                      Offset.zero & MediaQuery.of(context).size,
+                                    );
+                                    showMenu(
+                                      context: context,
+                                      position: position,
+                                      items: [
+                                        PopupMenuItem(
+                                          value: 'reply',
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.reply, size: 20),
+                                              const SizedBox(width: 8),
+                                              const Text("Reply"),
+                                            ],
+                                          ),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'copy',
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.copy, size: 20),
+                                              const SizedBox(width: 8),
+                                              const Text("Copy Text"),
+                                            ],
+                                          ),
+                                        ),
+                                        // Can add Delete here later
+                                      ],
+                                    ).then((value) {
+                                      if (value == 'reply') {
+                                        _onSwipeReply(msg);
+                                      } else if (value == 'copy') {
+                                        Clipboard.setData(
+                                          ClipboardData(text: msg.text),
+                                        );
+                                        if (!context.mounted) return;
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              "Copied to clipboard",
+                                            ),
+                                            duration: Duration(seconds: 1),
+                                          ),
+                                        );
+                                      }
+                                    });
+                                  },
+                                  child: Dismissible(
+                                    key: ValueKey(msg.id),
+                                    direction: DismissDirection.startToEnd,
+                                    confirmDismiss: (direction) async {
+                                      _onSwipeReply(msg);
+                                      return false;
+                                    },
+                                    background: Container(
+                                      alignment: Alignment.centerLeft,
+                                      padding: const EdgeInsets.only(left: 20),
+                                      child: const Icon(
+                                        Icons.reply,
+                                        color: Color(0xFF1A60FF),
+                                      ),
+                                    ),
+                                    child: MessageBubble(
+                                      message: msg,
+                                      isDark: isDark,
+                                      isFirstInSequence: isFirstInSequence,
+                                      onRetry: () => ref
+                                          .read(chatRepositoryProvider)
+                                          .resendMessage(_chatId, msg, false),
+                                      showName: false,
+                                    ),
                                   ),
-                                  // Can add Delete here later
-                                ],
-                              ).then((value) {
-                                if (value == 'reply') {
-                                  _onSwipeReply(msg);
-                                } else if (value == 'copy') {
-                                  Clipboard.setData(ClipboardData(text: msg.text));
-                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Copied to clipboard"), duration: Duration(seconds: 1)));
-                                }
-                              });
-                            },
-                            child: Dismissible(
-                              key: ValueKey(msg.id),
-                              direction: DismissDirection.startToEnd,
-                              confirmDismiss: (direction) async {
-                                _onSwipeReply(msg);
-                                return false;
-                              },
-                              background: Container(
-                                alignment: Alignment.centerLeft,
-                                padding: const EdgeInsets.only(left: 20),
-                                child: const Icon(Icons.reply, color: Color(0xFF1A60FF)),
-                              ),
-                              child: MessageBubble(
-                                message: msg,
-                                isDark: isDark,
-                                isFirstInSequence: isFirstInSequence,
-                                onRetry: () => ref.read(chatRepositoryProvider).resendMessage(_chatId, msg, false),
-                                showName: false,
-                              ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                      if (_showScrollToBottom)
+                        Positioned(
+                          bottom: 20.h,
+                          right: 20.w,
+                          child: FloatingActionButton.small(
+                            onPressed: () => _scrollToBottom(animated: true),
+                            backgroundColor: const Color(0xFF1A60FF),
+                            child: const Icon(
+                              Icons.arrow_downward,
+                              color: Colors.white,
                             ),
                           ),
-                        ],
-                      );
-                    },
+                        ),
+                    ],
                   ),
-                ),
-                if (_showScrollToBottom)
-                  Positioned(
-                    bottom: 20.h,
-                    right: 20.w,
-                    child: FloatingActionButton.small(
-                      onPressed: () => _scrollToBottom(animated: true),
-                      backgroundColor: const Color(0xFF1A60FF),
-                      child: const Icon(Icons.arrow_downward, color: Colors.white),
-                    ),
-                  ),
-              ],
-            ),
           ),
 
           if (_replyingTo != null)
@@ -446,30 +527,40 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               color: isDark ? Colors.grey[900] : Colors.grey[200],
               child: Row(
                 children: [
-                  Container(width: 4, height: 40, color: const Color(0xFF1A60FF)),
+                  Container(
+                    width: 4,
+                    height: 40,
+                    color: const Color(0xFF1A60FF),
+                  ),
                   SizedBox(width: 8),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                            _replyingTo!.senderName,
-                            style: TextStyle(
-                                color: const Color(0xFF1A60FF),
-                                fontWeight: FontWeight.bold,
-                                fontSize: Responsive.fontSize(context, 14)
-                            )
+                          _replyingTo!.senderName,
+                          style: TextStyle(
+                            color: const Color(0xFF1A60FF),
+                            fontWeight: FontWeight.bold,
+                            fontSize: Responsive.fontSize(context, 14),
+                          ),
                         ),
                         Text(
-                            _replyingTo!.text,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 14))
+                          _replyingTo!.text,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontSize: Responsive.fontSize(context, 14),
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  IconButton(icon: Icon(Icons.close, color: Colors.grey), onPressed: () => setState(() => _replyingTo = null)),
+                  IconButton(
+                    icon: Icon(Icons.close, color: Colors.grey),
+                    onPressed: () => setState(() => _replyingTo = null),
+                  ),
                 ],
               ),
             ),
@@ -479,7 +570,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             focusNode: _inputFocusNode,
             onChanged: _onTextChanged,
             onSubmitted: _sendMessage,
-            hintText: "Message ${currentChat.isGroup ? currentChat.name : (currentChat.name)}...",
+            hintText:
+                "Message ${currentChat.isGroup ? currentChat.name : (currentChat.name)}...",
             isDesktop: isDesktop,
             isDark: isDark,
           ),
@@ -494,7 +586,11 @@ class _PrivateChatTitle extends ConsumerWidget {
   final String chatId;
   final Color textColor;
 
-  const _PrivateChatTitle({required this.chat, required this.chatId, required this.textColor});
+  const _PrivateChatTitle({
+    required this.chat,
+    required this.chatId,
+    required this.textColor,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -508,8 +604,11 @@ class _PrivateChatTitle extends ConsumerWidget {
           backgroundColor: const Color(0xFF1A60FF),
           radius: 18,
           child: Text(
-              chat.name.isNotEmpty ? chat.name[0] : '?',
-              style: TextStyle(color: Colors.white, fontSize: Responsive.fontSize(context, 18))
+            chat.name.isNotEmpty ? chat.name[0] : '?',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: Responsive.fontSize(context, 18),
+            ),
           ),
         ),
         const SizedBox(width: 10),
@@ -517,13 +616,21 @@ class _PrivateChatTitle extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-                chat.name,
-                style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: Responsive.fontSize(context, 16))
+              chat.name,
+              style: TextStyle(
+                color: textColor,
+                fontWeight: FontWeight.w600,
+                fontSize: Responsive.fontSize(context, 16),
+              ),
             ),
             if (isTyping)
               Text(
-                  "typing...",
-                  style: TextStyle(color: const Color(0xFF1A60FF), fontSize: Responsive.fontSize(context, 12), fontWeight: FontWeight.bold)
+                "typing...",
+                style: TextStyle(
+                  color: const Color(0xFF1A60FF),
+                  fontSize: Responsive.fontSize(context, 12),
+                  fontWeight: FontWeight.bold,
+                ),
               ),
           ],
         ),
@@ -532,10 +639,6 @@ class _PrivateChatTitle extends ConsumerWidget {
   }
 }
 
-
-
-
-
 class _PrivateChatInfoContent extends ConsumerWidget {
   final Chat chat;
   const _PrivateChatInfoContent({required this.chat});
@@ -543,7 +646,10 @@ class _PrivateChatInfoContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentUser = ref.watch(userProvider);
-    final otherUser = chat.participants.firstWhere((u) => u.id != currentUser?.id, orElse: () => User(id: '?', name: chat.name, email: 'unknown'));
+    final otherUser = chat.participants.firstWhere(
+      (u) => u.id != currentUser?.id,
+      orElse: () => User(id: '?', name: chat.name, email: 'unknown'),
+    );
     final textColor = Theme.of(context).colorScheme.onSurface;
 
     return Padding(
@@ -551,14 +657,34 @@ class _PrivateChatInfoContent extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          CircleAvatar(radius: 40, backgroundColor: Colors.grey[300], child: Text(otherUser.name.isNotEmpty ? otherUser.name[0] : '?', style: TextStyle(fontSize: Responsive.fontSize(context, 32)))),
+          CircleAvatar(
+            radius: 40,
+            backgroundColor: Colors.grey[300],
+            child: Text(
+              otherUser.name.isNotEmpty ? otherUser.name[0] : '?',
+              style: TextStyle(fontSize: Responsive.fontSize(context, 32)),
+            ),
+          ),
           const SizedBox(height: 15),
-          Text(otherUser.name, style: TextStyle(fontSize: Responsive.fontSize(context, 22), fontWeight: FontWeight.bold, color: textColor)),
+          Text(
+            otherUser.name,
+            style: TextStyle(
+              fontSize: Responsive.fontSize(context, 22),
+              fontWeight: FontWeight.bold,
+              color: textColor,
+            ),
+          ),
           Text(otherUser.email, style: const TextStyle(color: Colors.grey)),
           const SizedBox(height: 30),
           ListTile(
             leading: const Icon(Icons.block, color: Colors.red),
-            title: Text("Block User", style: TextStyle(color: Colors.red, fontSize: Responsive.fontSize(context, 16))),
+            title: Text(
+              "Block User",
+              style: TextStyle(
+                color: Colors.red,
+                fontSize: Responsive.fontSize(context, 16),
+              ),
+            ),
             onTap: () => Navigator.pop(context),
           ),
         ],

@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:intl/intl.dart';
 import '../model/data_models.dart';
 import '../model/responsive_helper.dart';
 import '../services/chat_repository.dart';
@@ -18,11 +16,7 @@ class GroupChatPage extends ConsumerStatefulWidget {
   final Chat chat;
   final bool isDesktop;
 
-  const GroupChatPage({
-    super.key,
-    required this.chat,
-    this.isDesktop = false,
-  });
+  const GroupChatPage({super.key, required this.chat, this.isDesktop = false});
 
   @override
   ConsumerState<GroupChatPage> createState() => _GroupChatPageState();
@@ -55,12 +49,15 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
     });
 
     _scrollController.addListener(_scrollListener);
-    SchedulerBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
+    SchedulerBinding.instance.addPostFrameCallback(
+      (_) => _scrollToBottom(animated: false),
+    );
   }
 
   void _scrollListener() {
     if (_scrollController.hasClients) {
-      final distanceToBottom = _scrollController.position.maxScrollExtent - _scrollController.offset;
+      final distanceToBottom =
+          _scrollController.position.maxScrollExtent - _scrollController.offset;
       final show = distanceToBottom > 300;
       if (show != _showScrollToBottom) {
         setState(() {
@@ -84,7 +81,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
       setState(() => _replyingTo = null);
       if (widget.isDesktop) {
         Future.delayed(const Duration(milliseconds: 100), () {
-           if (mounted) _inputFocusNode.requestFocus();
+          if (mounted) _inputFocusNode.requestFocus();
         });
       }
     }
@@ -121,10 +118,10 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
       setState(() => _replyingTo = null);
 
       repo.sendMessage(
-          _chatId,
-          text,
-          true, // isGroup
-          replyTo: replyContext
+        _chatId,
+        text,
+        true, // isGroup
+        replyTo: replyContext,
       );
 
       repo.sendTyping(_chatId, true, false);
@@ -156,7 +153,9 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                 curve: Curves.easeOut,
               );
             } else {
-              _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+              _scrollController.jumpTo(
+                _scrollController.position.maxScrollExtent,
+              );
             }
           }
         });
@@ -171,7 +170,9 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
         builder: (context) => Dialog(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 400),
-            child: SingleChildScrollView(child: _GroupInfoContent(chatId: chatId)),
+            child: SingleChildScrollView(
+              child: _GroupInfoContent(chatId: chatId),
+            ),
           ),
         ),
       );
@@ -183,7 +184,10 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
           initialChildSize: 0.6,
           maxChildSize: 0.9,
           expand: false,
-          builder: (_, c) => SingleChildScrollView(controller: c, child: _GroupInfoContent(chatId: chatId)),
+          builder: (_, c) => SingleChildScrollView(
+            controller: c,
+            child: _GroupInfoContent(chatId: chatId),
+          ),
         ),
       );
     }
@@ -194,7 +198,9 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text("Delete Group"),
-        content: const Text("Are you sure you want to permanently delete this group? This action cannot be undone."),
+        content: const Text(
+          "Are you sure you want to permanently delete this group? This action cannot be undone.",
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -207,9 +213,10 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
               try {
                 await ref.read(chatRepositoryProvider).deleteGroup(groupId);
               } catch (e) {
-                if (mounted) {
-                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed to delete group: $e")));
-                }
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text("Failed to delete group: $e")),
+                );
               }
             },
             child: const Text("Delete", style: TextStyle(color: Colors.red)),
@@ -220,7 +227,9 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   }
 
   bool _isSameDay(DateTime date1, DateTime date2) {
-    return date1.year == date2.year && date1.month == date2.month && date1.day == date2.day;
+    return date1.year == date2.year &&
+        date1.month == date2.month &&
+        date1.day == date2.day;
   }
 
   @override
@@ -231,29 +240,35 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
     final inputColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
     final isDesktop = widget.isDesktop;
 
-
-    
     // OPTIMIZATION: Only rebuild if THIS chat changes.
-    final currentChat = ref.watch(chatListProvider.select(
-      (chats) => chats.firstWhere((c) => c.id == _chatId, orElse: () => widget.chat)
-    ));
+    final currentChat = ref.watch(
+      chatListProvider.select(
+        (chats) =>
+            chats.firstWhere((c) => c.id == _chatId, orElse: () => widget.chat),
+      ),
+    );
 
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
         backgroundColor: backgroundColor,
         elevation: 1,
-        leading: isDesktop ? null : IconButton(
-          icon: Icon(Icons.arrow_back, color: textColor),
-          onPressed: () => Navigator.pop(context),
-        ),
+        leading: isDesktop
+            ? null
+            : IconButton(
+                icon: Icon(Icons.arrow_back, color: textColor),
+                onPressed: () => Navigator.pop(context),
+              ),
         title: InkWell(
           onTap: () => _showGroupInfo(_chatId),
-          child: _GroupChatTitle(chat: currentChat, chatId: _chatId, textColor: textColor),
+          child: _GroupChatTitle(
+            chat: currentChat,
+            chatId: _chatId,
+            textColor: textColor,
+          ),
         ),
         actions: [
           PopupMenuButton<String>(
-
             icon: Icon(Icons.more_vert, color: textColor),
             onSelected: (value) {
               if (value == 'info') {
@@ -284,7 +299,10 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                       children: [
                         Icon(Icons.delete_forever, color: Colors.red),
                         SizedBox(width: 8),
-                        Text("Delete Group", style: TextStyle(color: Colors.red)),
+                        Text(
+                          "Delete Group",
+                          style: TextStyle(color: Colors.red),
+                        ),
                       ],
                     ),
                   ),
@@ -303,8 +321,12 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                   thumbVisibility: isDesktop,
                   child: ListView.builder(
                     controller: _scrollController,
-                    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                    padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 16.w,
+                      vertical: 10.h,
+                    ),
                     itemCount: currentChat.messages.length,
                     itemBuilder: (context, index) {
                       final message = currentChat.messages[index];
@@ -312,16 +334,23 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                         return Center(
                           child: Container(
                             margin: EdgeInsets.symmetric(vertical: 8.h),
-                            padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 4.h),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 12.w,
+                              vertical: 4.h,
+                            ),
                             decoration: BoxDecoration(
-                              color: isDark ? Colors.grey[800] : Colors.grey[200],
+                              color: isDark
+                                  ? Colors.grey[800]
+                                  : Colors.grey[200],
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
                               message.text,
                               style: TextStyle(
-                                  fontSize: Responsive.fontSize(context, 12),
-                                  color: isDark ? Colors.grey[300] : Colors.grey[800]
+                                fontSize: Responsive.fontSize(context, 12),
+                                color: isDark
+                                    ? Colors.grey[300]
+                                    : Colors.grey[800],
                               ),
                             ),
                           ),
@@ -333,10 +362,14 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
 
                       if (index > 0) {
                         final prevMessage = currentChat.messages[index - 1];
-                        if (prevMessage.senderId == message.senderId && !prevMessage.isSystem) {
+                        if (prevMessage.senderId == message.senderId &&
+                            !prevMessage.isSystem) {
                           showName = false;
                         }
-                        if (!_isSameDay(prevMessage.timestamp, message.timestamp)) {
+                        if (!_isSameDay(
+                          prevMessage.timestamp,
+                          message.timestamp,
+                        )) {
                           showDate = true;
                           showName = true;
                         }
@@ -347,14 +380,18 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          if (showDate) ChatDateHeader(date: message.timestamp, isDark: isDark),
+                          if (showDate)
+                            ChatDateHeader(
+                              date: message.timestamp,
+                              isDark: isDark,
+                            ),
                           GestureDetector(
                             onLongPress: () => _onSwipeReply(message),
                             onSecondaryTapUp: (details) {
                               // Desktop Right-Click Menu
                               final position = RelativeRect.fromRect(
-                                details.globalPosition & Size.zero, 
-                                Offset.zero & MediaQuery.of(context).size
+                                details.globalPosition & Size.zero,
+                                Offset.zero & MediaQuery.of(context).size,
                               );
                               showMenu(
                                 context: context,
@@ -362,19 +399,39 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                                 items: [
                                   PopupMenuItem(
                                     value: 'reply',
-                                    child: Row(children: [const Icon(Icons.reply, size: 20), const SizedBox(width: 8), const Text("Reply")]),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.reply, size: 20),
+                                        const SizedBox(width: 8),
+                                        const Text("Reply"),
+                                      ],
+                                    ),
                                   ),
                                   PopupMenuItem(
                                     value: 'copy',
-                                    child: Row(children: [const Icon(Icons.copy, size: 20), const SizedBox(width: 8), const Text("Copy Text")]),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.copy, size: 20),
+                                        const SizedBox(width: 8),
+                                        const Text("Copy Text"),
+                                      ],
+                                    ),
                                   ),
                                 ],
                               ).then((value) {
                                 if (value == 'reply') {
                                   _onSwipeReply(message);
                                 } else if (value == 'copy') {
-                                  Clipboard.setData(ClipboardData(text: message.text));
-                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Copied to clipboard"), duration: Duration(seconds: 1)));
+                                  Clipboard.setData(
+                                    ClipboardData(text: message.text),
+                                  );
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text("Copied to clipboard"),
+                                      duration: Duration(seconds: 1),
+                                    ),
+                                  );
                                 }
                               });
                             },
@@ -388,12 +445,17 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                               background: Container(
                                 alignment: Alignment.centerLeft,
                                 padding: const EdgeInsets.only(left: 20),
-                                child: const Icon(Icons.reply, color: Color(0xFF1A60FF)),
+                                child: const Icon(
+                                  Icons.reply,
+                                  color: Color(0xFF1A60FF),
+                                ),
                               ),
                               child: MessageBubble(
                                 message: message,
                                 isDark: isDark,
-                                onRetry: () => ref.read(chatRepositoryProvider).resendMessage(_chatId, message, true),
+                                onRetry: () => ref
+                                    .read(chatRepositoryProvider)
+                                    .resendMessage(_chatId, message, true),
                                 showName: showName,
                               ),
                             ),
@@ -410,7 +472,10 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
                     child: FloatingActionButton.small(
                       onPressed: () => _scrollToBottom(animated: true),
                       backgroundColor: const Color(0xFF1A60FF),
-                      child: const Icon(Icons.arrow_downward, color: Colors.white),
+                      child: const Icon(
+                        Icons.arrow_downward,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
               ],
@@ -423,30 +488,40 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
               color: isDark ? Colors.grey[900] : Colors.grey[200],
               child: Row(
                 children: [
-                  Container(width: 4, height: 40, color: const Color(0xFF1A60FF)),
+                  Container(
+                    width: 4,
+                    height: 40,
+                    color: const Color(0xFF1A60FF),
+                  ),
                   SizedBox(width: 8),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                            _replyingTo!.senderName,
-                            style: TextStyle(
-                                color: const Color(0xFF1A60FF),
-                                fontWeight: FontWeight.bold,
-                                fontSize: Responsive.fontSize(context, 14)
-                            )
+                          _replyingTo!.senderName,
+                          style: TextStyle(
+                            color: const Color(0xFF1A60FF),
+                            fontWeight: FontWeight.bold,
+                            fontSize: Responsive.fontSize(context, 14),
+                          ),
                         ),
                         Text(
-                            _replyingTo!.text,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 14))
+                          _replyingTo!.text,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontSize: Responsive.fontSize(context, 14),
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  IconButton(icon: Icon(Icons.close, color: Colors.grey), onPressed: () => setState(() => _replyingTo = null)),
+                  IconButton(
+                    icon: Icon(Icons.close, color: Colors.grey),
+                    onPressed: () => setState(() => _replyingTo = null),
+                  ),
                 ],
               ),
             ),
@@ -466,20 +541,24 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   }
 }
 
-
-
 class _GroupChatTitle extends ConsumerWidget {
   final Chat chat;
   final String chatId;
   final Color textColor;
 
-  const _GroupChatTitle({required this.chat, required this.chatId, required this.textColor});
+  const _GroupChatTitle({
+    required this.chat,
+    required this.chatId,
+    required this.textColor,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final typingMap = ref.watch(typingStatusProvider);
     final typingUsers = typingMap[chatId] ?? {};
-    final typingText = typingUsers.isEmpty ? "" : "${typingUsers.join(', ')} typing...";
+    final typingText = typingUsers.isEmpty
+        ? ""
+        : "${typingUsers.join(', ')} typing...";
 
     return Row(
       children: [
@@ -492,13 +571,30 @@ class _GroupChatTitle extends ConsumerWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(chat.name, style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: Responsive.fontSize(context, 16))),
+            Text(
+              chat.name,
+              style: TextStyle(
+                color: textColor,
+                fontWeight: FontWeight.bold,
+                fontSize: Responsive.fontSize(context, 16),
+              ),
+            ),
             if (typingText.isNotEmpty)
-              Text(typingText, style: TextStyle(color: const Color(0xFF1A60FF), fontSize: Responsive.fontSize(context, 12), fontStyle: FontStyle.italic))
+              Text(
+                typingText,
+                style: TextStyle(
+                  color: const Color(0xFF1A60FF),
+                  fontSize: Responsive.fontSize(context, 12),
+                  fontStyle: FontStyle.italic,
+                ),
+              )
             else
               Text(
                 "${chat.participants.length} members",
-                style: TextStyle(color: Colors.grey, fontSize: Responsive.fontSize(context, 12)),
+                style: TextStyle(
+                  color: Colors.grey,
+                  fontSize: Responsive.fontSize(context, 12),
+                ),
               ),
           ],
         ),
@@ -506,8 +602,6 @@ class _GroupChatTitle extends ConsumerWidget {
     );
   }
 }
-
-
 
 class _GroupInfoContent extends ConsumerWidget {
   final String chatId;
@@ -521,7 +615,16 @@ class _GroupInfoContent extends ConsumerWidget {
     final chatList = ref.watch(chatListProvider);
 
     // Find the chat object dynamically so UI updates when members change
-    final chat = chatList.firstWhere((c) => c.id == chatId, orElse: () => Chat(id: chatId, name: 'Unknown', isGroup: true, messages: [], participants: []));
+    final chat = chatList.firstWhere(
+      (c) => c.id == chatId,
+      orElse: () => Chat(
+        id: chatId,
+        name: 'Unknown',
+        isGroup: true,
+        messages: [],
+        participants: [],
+      ),
+    );
 
     return Padding(
       padding: const EdgeInsets.all(20.0),
@@ -531,7 +634,13 @@ class _GroupInfoContent extends ConsumerWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text("Group Members", style: TextStyle(fontSize: Responsive.fontSize(context, 18), fontWeight: FontWeight.bold)),
+              Text(
+                "Group Members",
+                style: TextStyle(
+                  fontSize: Responsive.fontSize(context, 18),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               // Add Member button removed
             ],
           ),
@@ -544,29 +653,60 @@ class _GroupInfoContent extends ConsumerWidget {
               final user = chat.participants[index];
               final isMe = user.id == currentUser?.id;
               return ListTile(
-                leading: CircleAvatar(child: Text(user.name.isNotEmpty ? user.name[0] : '?')),
-                title: Text(user.name + (isMe ? " (You)" : ""), style: TextStyle(fontSize: Responsive.fontSize(context, 16))),
+                leading: CircleAvatar(
+                  child: Text(user.name.isNotEmpty ? user.name[0] : '?'),
+                ),
+                title: Text(
+                  user.name + (isMe ? " (You)" : ""),
+                  style: TextStyle(fontSize: Responsive.fontSize(context, 16)),
+                ),
                 trailing: PopupMenuButton<String>(
                   onSelected: (value) async {
                     if (value == 'msg') {
                       Navigator.pop(context); // Close sheet
                       final privateChat = await repo.startPrivateChat(user);
                       if (context.mounted) {
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => ChatPage(chat: privateChat)));
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ChatPage(chat: privateChat),
+                          ),
+                        );
                       }
                     } else if (value == 'remove') {
                       try {
                         await repo.removeMemberFromGroup(chat.id, user.id);
                       } catch (e) {
                         if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Failed to remove: $e")));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text("Failed to remove: $e")),
+                          );
                         }
                       }
                     }
                   },
                   itemBuilder: (context) => [
-                    if (!isMe) PopupMenuItem(value: 'msg', child: Text("Message", style: TextStyle(fontSize: Responsive.fontSize(context, 14)))),
-                    if (!isMe) PopupMenuItem(value: 'remove', child: Text("Remove", style: TextStyle(color: Colors.red, fontSize: Responsive.fontSize(context, 14)))),
+                    if (!isMe)
+                      PopupMenuItem(
+                        value: 'msg',
+                        child: Text(
+                          "Message",
+                          style: TextStyle(
+                            fontSize: Responsive.fontSize(context, 14),
+                          ),
+                        ),
+                      ),
+                    if (!isMe)
+                      PopupMenuItem(
+                        value: 'remove',
+                        child: Text(
+                          "Remove",
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontSize: Responsive.fontSize(context, 14),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               );
@@ -574,13 +714,19 @@ class _GroupInfoContent extends ConsumerWidget {
           ),
           const SizedBox(height: 20),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red[50], foregroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red[50],
+              foregroundColor: Colors.red,
+            ),
             onPressed: () {
               repo.leaveGroup(chat.id);
               Navigator.pop(context); // Close sheet
               Navigator.pop(context); // Close page
             },
-            child: Text("Leave Group", style: TextStyle(fontSize: Responsive.fontSize(context, 14))),
+            child: Text(
+              "Leave Group",
+              style: TextStyle(fontSize: Responsive.fontSize(context, 14)),
+            ),
           ),
         ],
       ),

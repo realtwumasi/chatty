@@ -44,6 +44,10 @@ dependencies:
   web_socket_channel: ^3.0.3
   intl: ^0.20.2
   flutter_launcher_icons: ^0.13.1
+  # E2E Encryption
+  cryptography: ^2.7.0
+  cryptography_flutter: ^2.3.2
+  flutter_secure_storage: ^9.0.0
 
 dev_dependencies:
   flutter_test:

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../model/responsive_helper.dart';
 
 class ChatInputArea extends StatelessWidget {
@@ -29,7 +28,6 @@ class ChatInputArea extends StatelessWidget {
     final inputColor = isDark ? const Color(0xFF1E1E1E) : Colors.grey[100];
     final textColor = Theme.of(context).colorScheme.onSurface;
 
-
     return Container(
       padding: EdgeInsets.all(isDesktop ? 20 : 12),
       decoration: BoxDecoration(
@@ -39,7 +37,7 @@ class ChatInputArea extends StatelessWidget {
             color: Colors.black.withOpacity(isDark ? 0.3 : 0.05),
             offset: const Offset(0, -2),
             blurRadius: 10,
-          )
+          ),
         ],
       ),
       child: Row(
@@ -49,12 +47,15 @@ class ChatInputArea extends StatelessWidget {
               decoration: BoxDecoration(
                 color: inputColor,
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: isDark ? Colors.transparent : Colors.grey.shade200),
+                border: Border.all(
+                  color: isDark ? Colors.transparent : Colors.grey.shade200,
+                ),
               ),
               child: CallbackShortcuts(
                 bindings: {
-                   if (isDesktop)
-                     const SingleActivator(LogicalKeyboardKey.enter): () => onSubmitted(),
+                  if (isDesktop)
+                    const SingleActivator(LogicalKeyboardKey.enter): () =>
+                        onSubmitted(),
                 },
                 child: TextField(
                   controller: controller,
@@ -64,13 +65,21 @@ class ChatInputArea extends StatelessWidget {
                   minLines: 1,
                   maxLines: 5,
                   keyboardType: TextInputType.multiline,
-                  textInputAction: isDesktop ? TextInputAction.newline : TextInputAction.send,
-                  style: TextStyle(color: textColor, fontSize: Responsive.fontSize(context, 16)),
+                  textInputAction: isDesktop
+                      ? TextInputAction.newline
+                      : TextInputAction.send,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: Responsive.fontSize(context, 16),
+                  ),
                   decoration: InputDecoration(
                     hintText: hintText,
                     hintStyle: TextStyle(color: Colors.grey[400]),
                     border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
                   ),
                   onSubmitted: isDesktop ? null : (_) => onSubmitted(),
                 ),

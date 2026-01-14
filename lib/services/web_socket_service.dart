@@ -93,6 +93,7 @@ class WebSocketService {
           _cleanup();
           _attemptReconnect();
         },
+        cancelOnError: true,
       );
 
       // _startHeartbeat();
